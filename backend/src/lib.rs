@@ -1,43 +1,40 @@
-mod bitboard;
-
+pub mod bitboard;
+pub use bitboard::BitBoard;
 use std::{iter::StepBy, ops::Range, sync::LazyLock};
 
 use arrayvec::ArrayVec;
-use bitboard::BitBoard;
+use bit_iter::BitIter;
 
 #[derive(Default)]
 pub struct Player {
-    pawns: BitBoard,
-    rooks: BitBoard,
-    knights: BitBoard,
-    bishops: BitBoard,
-    queens: BitBoard,
-    kings: BitBoard,
+    pub pawns: BitBoard,
+    pub rooks: BitBoard,
+    pub knights: BitBoard,
+    pub bishops: BitBoard,
+    pub queens: BitBoard,
+    pub kings: BitBoard,
 }
 
 impl Player {
     pub fn occupied_squares(&self) -> BitBoard {
         self.pawns | self.rooks | self.knights | self.bishops | self.queens | self.kings
     }
+
+    pub fn flip_view(&self) -> Player {
+        Player {
+            pawns: self.pawns.reverse_bits(),
+            rooks: self.rooks.reverse_bits(),
+            knights: self.knights.reverse_bits(),
+            bishops: self.bishops.reverse_bits(),
+            queens: self.queens.reverse_bits(),
+            kings: self.kings.reverse_bits(),
+        }
+    }
 }
 
-// impl Default for Player {
-//     fn default() -> Self {
-//         Player {
-//             pawns: 0,
-//             rooks: 0,
-//             knights: 0,
-//             bishops: 0,
-//             queens: 0,
-//             kings: 0,
-//         }
-//     }
-// }
-
-#[derive(Default)]
 pub struct Board {
-    player: Player,
-    opponent: Player,
+    pub player: Player,
+    pub opponent: Player,
 }
 
 fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
@@ -266,15 +263,6 @@ static KING_TARGET_POS_LISTS: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(||
     target_pos_lists
 });
 
-// impl Default for Board {
-//     fn default() -> Self {
-//         Board {
-//             white: Player::default(),
-//             black: Player::default(),
-//         }
-//     }
-// }
-
 impl Board {
     pub fn generate_legal_moves(&self) -> Vec<Move> {
         let mut moves = Vec::new();
@@ -296,161 +284,61 @@ impl Board {
                 moves.push(new_move);
             }
         };
-        for pos in 8u8..56u8 {
-            // No more left
-            if pawn_count == 0 {
-                break;
-            }
-
-            let pawn_at_pos = self.player.pawns.get(pos);
+        for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
             let target_pos = pos + 8;
-            if pawn_at_pos {
-                // Pawns can move one square forwards
+            // Pawns can move one square forwards
+            check_and_push_pawn_move(pos, target_pos);
+            // Pawns on their initial rank can optionally move two squares
+            if pos < 16 {
+                let target_pos = pos + 16;
                 check_and_push_pawn_move(pos, target_pos);
-                // Pawns on their initial rank can optionally move two squares
-                if pos < 16 {
-                    let target_pos = pos + 16;
-                    if pawn_at_pos {
-                        check_and_push_pawn_move(pos, target_pos);
-                        // No more left
-                        pawn_count -= 1;
-                        if pawn_count == 0 {
-                            break;
-                        }
-                    }
-                }
+                // No more left
                 pawn_count -= 1;
+                if pawn_count == 0 {
+                    break;
+                }
             }
         }
 
         // Rooks
-        let mut rook_count = self.player.rooks.count();
-        for pos in 0u8..64u8 {
-            // No more left
-            if rook_count == 0 {
-                break;
-            }
-
-            let rook_at_pos = self.player.rooks.get(pos);
-            if rook_at_pos {
-                for direction in 0..4 {
-                    let target_pos_list = &ROOK_TARGET_POS_LISTS_2D[pos as usize];
-                    for target_pos in &target_pos_list[direction] {
-                        let target_pos_free = !occupied_squares.get(*target_pos);
-                        if target_pos_free {
-                            let new_move = Move {
-                                from: pos,
-                                to: *target_pos,
-                            };
-                            moves.push(new_move);
-                        } else {
-                            break;
-                        }
+        for pos in BitIter::from(self.player.rooks.board).map(|x| x as u8) {
+            for direction in 0..4 {
+                let target_pos_list = &ROOK_TARGET_POS_LISTS_2D[pos as usize];
+                for target_pos in &target_pos_list[direction] {
+                    let target_pos_free = !occupied_squares.get(*target_pos);
+                    if target_pos_free {
+                        let new_move = Move {
+                            from: pos,
+                            to: *target_pos,
+                        };
+                        moves.push(new_move);
+                    } else {
+                        break;
                     }
                 }
-
-                rook_count -= 1;
             }
         }
 
         // Knights
-        let mut knight_count = self.player.knights.count();
-        for pos in 0u8..64u8 {
-            // No more left
-            if knight_count == 0 {
-                break;
-            }
-
-            let rook_at_pos = self.player.knights.get(pos);
-            if rook_at_pos {
-                let target_pos_list = &KNIGHT_TARGET_POS_LISTS[pos as usize];
-                for target_pos in target_pos_list {
-                    let target_pos_free = !occupied_squares.get(*target_pos);
-                    if target_pos_free {
-                        let new_move = Move {
-                            from: pos,
-                            to: *target_pos,
-                        };
-                        moves.push(new_move);
-                    }
+        for pos in BitIter::from(self.player.knights.board).map(|x| x as u8) {
+            let target_pos_list = &KNIGHT_TARGET_POS_LISTS[pos as usize];
+            for target_pos in target_pos_list {
+                let target_pos_free = !occupied_squares.get(*target_pos);
+                if target_pos_free {
+                    let new_move = Move {
+                        from: pos,
+                        to: *target_pos,
+                    };
+                    moves.push(new_move);
                 }
-
-                knight_count -= 1;
             }
         }
 
         // Bishops
-        let mut bishop_count = self.player.bishops.count();
-        for pos in 0u8..64u8 {
-            // No more left
-            if bishop_count == 0 {
-                break;
-            }
-
-            let rook_at_pos = self.player.bishops.get(pos);
-            if rook_at_pos {
-                for direction in 0..4 {
-                    let target_pos_list = &BISHOP_TARGET_POS_LISTS_2D[pos as usize];
-                    for target_pos in &target_pos_list[direction] {
-                        let target_pos_free = !occupied_squares.get(*target_pos);
-                        if target_pos_free {
-                            let new_move = Move {
-                                from: pos,
-                                to: *target_pos,
-                            };
-                            moves.push(new_move);
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
-                bishop_count -= 1;
-            }
-        }
-
-        // Queens
-        let mut queen_count = self.player.queens.count();
-        for pos in 0u8..64u8 {
-            // No more left
-            if queen_count == 0 {
-                break;
-            }
-
-            let rook_at_pos = self.player.queens.get(pos);
-            if rook_at_pos {
-                for direction in 0..4 {
-                    let target_pos_list = &QUEEN_TARGET_POS_LISTS_2D[pos as usize];
-                    for target_pos in &target_pos_list[direction] {
-                        let target_pos_free = !occupied_squares.get(*target_pos);
-                        if target_pos_free {
-                            let new_move = Move {
-                                from: pos,
-                                to: *target_pos,
-                            };
-                            moves.push(new_move);
-                        } else {
-                            break;
-                        }
-                    }
-                }
-
-                queen_count -= 1;
-            }
-        }
-
-        // Kings
-        let mut king_count = self.player.kings.count();
-        for pos in 0u8..64u8 {
-            // No more left
-            if king_count == 0 {
-                break;
-            }
-
-            let rook_at_pos = self.player.kings.get(pos);
-            if rook_at_pos {
-                let target_pos_list = &KING_TARGET_POS_LISTS[pos as usize];
-                for target_pos in target_pos_list {
+        for pos in BitIter::from(self.player.bishops.board).map(|x| x as u8) {
+            for direction in 0..4 {
+                let target_pos_list = &BISHOP_TARGET_POS_LISTS_2D[pos as usize];
+                for target_pos in &target_pos_list[direction] {
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
                         let new_move = Move {
@@ -458,14 +346,97 @@ impl Board {
                             to: *target_pos,
                         };
                         moves.push(new_move);
+                    } else {
+                        break;
                     }
                 }
+            }
+        }
 
-                king_count -= 1;
+        // Queens
+        for pos in BitIter::from(self.player.queens.board).map(|x| x as u8) {
+            for direction in 0..4 {
+                let target_pos_list = &QUEEN_TARGET_POS_LISTS_2D[pos as usize];
+                for target_pos in &target_pos_list[direction] {
+                    let target_pos_free = !occupied_squares.get(*target_pos);
+                    if target_pos_free {
+                        let new_move = Move {
+                            from: pos,
+                            to: *target_pos,
+                        };
+                        moves.push(new_move);
+                    } else {
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Kings
+        for pos in BitIter::from(self.player.kings.board).map(|x| x as u8) {
+            let target_pos_list = &KING_TARGET_POS_LISTS[pos as usize];
+            for target_pos in target_pos_list {
+                let target_pos_free = !occupied_squares.get(*target_pos);
+                if target_pos_free {
+                    let new_move = Move {
+                        from: pos,
+                        to: *target_pos,
+                    };
+                    moves.push(new_move);
+                }
             }
         }
 
         moves
+    }
+}
+
+impl Default for Board {
+    fn default() -> Board {
+        let player = Player {
+            pawns: BitBoard::new(
+                0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_1111_1111_0000_0000,
+            ),
+            rooks: BitBoard::new(
+                0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_1000_0001,
+            ),
+            knights: BitBoard::new(
+                0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0100_0010,
+            ),
+            bishops: BitBoard::new(
+                0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0010_0100,
+            ),
+            queens: BitBoard::new(
+                0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_1000,
+            ),
+            kings: BitBoard::new(
+                0b0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0001_0000,
+            ),
+        };
+        let opponent = Player {
+            pawns: BitBoard::new(
+                0b0000_0000_1111_1111_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+            ),
+            rooks: BitBoard::new(
+                0b1000_0001_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+            ),
+            knights: BitBoard::new(
+                0b0100_0010_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+            ),
+            bishops: BitBoard::new(
+                0b0010_0100_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+            ),
+            queens: BitBoard::new(
+                0b0000_1000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+            ),
+            kings: BitBoard::new(
+                0b0001_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
+            ),
+        };
+        Board {
+            player: player,
+            opponent: opponent,
+        }
     }
 }
 
