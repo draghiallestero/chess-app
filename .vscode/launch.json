@@ -3,7 +3,7 @@
         {
             "type": "cppdbg",
             "request": "launch",
-            "name": "cargo run -p ui",
+            "name": "Run UI",
             "cwd": "${workspaceFolder}/ui",
             "program": "${workspaceFolder}/ui/target/debug/ui",
             "environment": [
@@ -17,8 +17,7 @@
             "osx": {
                 "MIMode": "lldb"
             },
-
-            "preLaunchTask": "Format"
+            "preLaunchTask": "Build UI"
         }
     ]
 }
