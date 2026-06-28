@@ -346,6 +346,9 @@ dependencies = [
 [[package]]
 name = "backend"
 version = "0.1.0"
+dependencies = [
+ "arrayvec",
+]
 
 [[package]]
 name = "bit-set"
