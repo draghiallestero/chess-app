@@ -40,6 +40,114 @@ pub struct Board {
     opponent: Player,
 }
 
+fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
+    target_pos_lists_2d: &mut [[ArrayVec<u8, 7>; DIRECTIONS]; 64],
+    cardinals: bool,
+    diagonals: bool,
+) {
+    // Utility
+    let to_pos = |rank, file| 8 * rank + file;
+
+    // Process each direction
+    for pos in 0u8..64u8 {
+        let current_target_pos_lists = &mut target_pos_lists_2d[pos as usize];
+        let (rank, file) = (pos / 8, pos % 8);
+
+        let mut current_rank;
+        let mut current_file;
+        let mut current_direction = 0;
+
+        if cardinals {
+            // West
+            current_rank = rank;
+            current_file = file;
+            current_direction = 0;
+            while current_file > 0 {
+                current_file -= 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+            // East
+            current_rank = rank;
+            current_file = file;
+            current_direction += 1;
+            while current_file < 7 {
+                current_file += 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+            // North
+            current_rank = rank;
+            current_file = file;
+            current_direction += 1;
+            while current_rank < 7 {
+                current_rank += 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+            // South
+            current_rank = rank;
+            current_file = file;
+            current_direction += 1;
+            while current_rank > 0 {
+                current_rank -= 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+        }
+        if diagonals {
+            // South-west
+            current_rank = rank;
+            current_file = file;
+            current_direction += if current_direction == 0 { 0 } else { 1 };
+            while current_rank > 0 && current_file > 0 {
+                current_rank -= 1;
+                current_file -= 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+            // South-east
+            current_rank = rank;
+            current_file = file;
+            current_direction += 1;
+            while current_rank > 0 && current_file < 7 {
+                current_rank -= 1;
+                current_file += 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+            // North-east
+            current_rank = rank;
+            current_file = file;
+            current_direction += 1;
+            while current_rank < 7 && current_file < 7 {
+                current_rank += 1;
+                current_file += 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+            // North-west
+            current_rank = rank;
+            current_file = file;
+            current_direction += 1;
+            while current_rank < 7 && current_file > 0 {
+                current_rank += 1;
+                current_file -= 1;
+                current_target_pos_lists[current_direction]
+                    .push(to_pos(current_rank, current_file));
+            }
+        }
+    }
+}
+
+// Rooks can slide along the cardinal directions
+static ROOK_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 4]; 64]> = LazyLock::new(|| {
+    let mut target_pos_lists_2d: [[ArrayVec<u8, 7>; 4]; 64] =
+        std::array::from_fn(|_| std::array::from_fn(|_| ArrayVec::<u8, 7>::new()));
+    generate_sliding_piece_target_pos_lists_2d(&mut target_pos_lists_2d, true, false);
+    target_pos_lists_2d
+});
+
 // Knights can move over two squares then one square, either first horizontally or first vertically
 static KNIGHT_TARGET_POS_LISTS: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(|| {
     let to_pos = |rank, file| 8 * rank + file;
@@ -93,52 +201,69 @@ static KNIGHT_TARGET_POS_LISTS: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(
 
 // Bishops can slide along the diagonal directions
 static BISHOP_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 4]; 64]> = LazyLock::new(|| {
+    let mut target_pos_lists_2d: [[ArrayVec<u8, 7>; 4]; 64] =
+        std::array::from_fn(|_| std::array::from_fn(|_| ArrayVec::<u8, 7>::new()));
+    generate_sliding_piece_target_pos_lists_2d(&mut target_pos_lists_2d, false, true);
+    target_pos_lists_2d
+});
+
+// Queens can slide along the cardinal and diagonal directions
+static QUEEN_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 8]; 64]> = LazyLock::new(|| {
+    let mut target_pos_lists_2d: [[ArrayVec<u8, 7>; 8]; 64] =
+        std::array::from_fn(|_| std::array::from_fn(|_| ArrayVec::<u8, 7>::new()));
+    generate_sliding_piece_target_pos_lists_2d(&mut target_pos_lists_2d, true, true);
+    target_pos_lists_2d
+});
+
+// Kings can move one square in any direction
+static KING_TARGET_POS_LISTS: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(|| {
     let to_pos = |rank, file| 8 * rank + file;
 
-    let mut target_pos_lists_2d =
-        std::array::from_fn(|_| std::array::from_fn(|_| ArrayVec::<u8, 7>::new()));
+    let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 8>::new());
     for pos in 0u8..64u8 {
-        let current_target_pos_lists = &mut target_pos_lists_2d[pos as usize];
+        let current_target_pos_list = &mut target_pos_lists[pos as usize];
         let (rank, file) = (pos / 8, pos % 8);
 
+        // Constraints
+        let ranks_from_top = 7 - rank;
+        let ranks_from_bottom = rank;
+        let files_from_left = file;
+        let files_from_right = 7 - file;
+
+        // West
+        if files_from_left >= 1 {
+            current_target_pos_list.push(to_pos(rank, file - 1));
+        }
         // South-west
-        let mut current_rank = rank;
-        let mut current_file = file;
-        let mut current_direction = 0;
-        while current_rank > 0 && current_file > 0 {
-            current_target_pos_lists[current_direction].push(to_pos(current_rank, current_file));
-            current_rank -= 1;
-            current_file -= 1;
+        if ranks_from_bottom >= 1 && files_from_left >= 1 {
+            current_target_pos_list.push(to_pos(rank - 1, file - 1));
+        }
+        // South
+        if ranks_from_bottom >= 1 {
+            current_target_pos_list.push(to_pos(rank - 1, file));
         }
         // South-east
-        current_rank = rank;
-        current_file = file;
-        current_direction = 1;
-        while current_rank > 0 && current_file < 7 {
-            current_target_pos_lists[current_direction].push(to_pos(current_rank, current_file));
-            current_rank -= 1;
-            current_file += 1;
+        if ranks_from_bottom >= 1 && files_from_right >= 1 {
+            current_target_pos_list.push(to_pos(rank - 1, file + 1));
+        }
+        // East
+        if files_from_right >= 1 {
+            current_target_pos_list.push(to_pos(rank, file + 1));
         }
         // North-east
-        current_rank = rank;
-        current_file = file;
-        current_direction = 2;
-        while current_rank < 7 && current_file < 7 {
-            current_target_pos_lists[current_direction].push(to_pos(current_rank, current_file));
-            current_rank += 1;
-            current_file += 1;
+        if ranks_from_top >= 1 && files_from_right >= 1 {
+            current_target_pos_list.push(to_pos(rank + 1, file + 1));
         }
-        // North-west
-        current_rank = rank;
-        current_file = file;
-        current_direction = 3;
-        while current_rank < 7 && current_file > 0 {
-            current_target_pos_lists[current_direction].push(to_pos(current_rank, current_file));
-            current_rank += 1;
-            current_file -= 1;
+        // North
+        if ranks_from_top >= 1 {
+            current_target_pos_list.push(to_pos(rank + 1, file));
+        }
+        // North-West
+        if ranks_from_top >= 1 && files_from_left >= 1 {
+            current_target_pos_list.push(to_pos(rank + 1, file - 1));
         }
     }
-    target_pos_lists_2d
+    target_pos_lists
 });
 
 // impl Default for Board {
@@ -200,30 +325,6 @@ impl Board {
 
         // Rooks
         let mut rook_count = self.player.rooks.count();
-        let mut check_and_push_rook_moves =
-            |pos, target_pos_range: StepBy<Range<u8>>, reverse_range| {
-                let mut loop_body = |pos, target_pos| {
-                    let target_pos_free = !occupied_squares.get(target_pos);
-                    if target_pos_free {
-                        let new_move = Move {
-                            from: pos,
-                            to: target_pos,
-                        };
-                        moves.push(new_move);
-                        return true;
-                    }
-                    return false;
-                };
-                if reverse_range {
-                    for target_pos in target_pos_range.rev() {
-                        loop_body(pos, target_pos);
-                    }
-                } else {
-                    for target_pos in target_pos_range {
-                        loop_body(pos, target_pos);
-                    }
-                }
-            };
         for pos in 0u8..64u8 {
             // No more left
             if rook_count == 0 {
@@ -232,27 +333,20 @@ impl Board {
 
             let rook_at_pos = self.player.rooks.get(pos);
             if rook_at_pos {
-                // Rooks can slide across the board in the cardinal directions
-                let (rank, file) = (pos / 8, pos % 8);
-                // Left
-                if file != 0 {
-                    check_and_push_rook_moves(pos, (8 * rank..8 * rank + file).step_by(1), true);
-                }
-                // Right
-                if file != 7 {
-                    check_and_push_rook_moves(
-                        pos,
-                        (8 * rank + file + 1..8 * (rank + 1)).step_by(1),
-                        false,
-                    );
-                }
-                // Up
-                if rank != 7 {
-                    check_and_push_rook_moves(pos, (8 * (rank + 1) + file..0).step_by(8), true);
-                }
-                // Down
-                if rank != 0 {
-                    check_and_push_rook_moves(pos, (file..8 * rank + file).step_by(8), true);
+                for direction in 0..4 {
+                    let target_pos_list = &ROOK_TARGET_POS_LISTS_2D[pos as usize];
+                    for target_pos in &target_pos_list[direction] {
+                        let target_pos_free = !occupied_squares.get(*target_pos);
+                        if target_pos_free {
+                            let new_move = Move {
+                                from: pos,
+                                to: *target_pos,
+                            };
+                            moves.push(new_move);
+                        } else {
+                            break;
+                        }
+                    }
                 }
 
                 rook_count -= 1;
@@ -315,13 +409,64 @@ impl Board {
             }
         }
 
+        // Queens
+        let mut queen_count = self.player.queens.count();
+        for pos in 0u8..64u8 {
+            // No more left
+            if queen_count == 0 {
+                break;
+            }
+
+            let rook_at_pos = self.player.queens.get(pos);
+            if rook_at_pos {
+                for direction in 0..4 {
+                    let target_pos_list = &QUEEN_TARGET_POS_LISTS_2D[pos as usize];
+                    for target_pos in &target_pos_list[direction] {
+                        let target_pos_free = !occupied_squares.get(*target_pos);
+                        if target_pos_free {
+                            let new_move = Move {
+                                from: pos,
+                                to: *target_pos,
+                            };
+                            moves.push(new_move);
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                queen_count -= 1;
+            }
+        }
+
+        // Kings
+        let mut king_count = self.player.kings.count();
+        for pos in 0u8..64u8 {
+            // No more left
+            if king_count == 0 {
+                break;
+            }
+
+            let rook_at_pos = self.player.kings.get(pos);
+            if rook_at_pos {
+                let target_pos_list = &KING_TARGET_POS_LISTS[pos as usize];
+                for target_pos in target_pos_list {
+                    let target_pos_free = !occupied_squares.get(*target_pos);
+                    if target_pos_free {
+                        let new_move = Move {
+                            from: pos,
+                            to: *target_pos,
+                        };
+                        moves.push(new_move);
+                    }
+                }
+
+                king_count -= 1;
+            }
+        }
+
         moves
     }
-
-    // pub fn opposing_view(&self) -> Board
-    // {
-
-    // }
 }
 
 pub struct Square {
@@ -336,5 +481,5 @@ pub struct Move {
 
 #[cfg(test)]
 mod tests {
-    fn perf() {}
+    fn perft() {}
 }
