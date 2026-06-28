@@ -21,145 +21,90 @@ pub enum Message {
 
 impl Counter {
     pub fn view(&self) -> Grid<Message> {
-        // // We use a column: a simple vertical layout
-        // let c = column![
-        //     // The increment button. We tell it to produce an
-        //     // `Increment` message when pressed
-        //     button("+").on_press(Message::Increment),
-        //     // We show the value of the counter here
-        //     text(self.value).size(50),
-        //     // The decrement button. We tell it to produce a
-        //     // `Decrement` message when pressed
-        //     button("-").on_press(Message::Decrement),
-        // ];
+        // Create the style for the board squares
+        let board_square_style_factory = |pos| {
+            move |theme: &Theme| {
+                let off_white = Background::Color(color!(238, 238, 210)).into();
+                let green = Background::Color(color!(118, 150, 86)).into();
 
-        // let default_style = Style::default();
+                let (x, y) = (pos / 8, pos % 8);
+                let background_color = { if (x + y) % 2 == 0 { off_white } else { green } };
 
-        // let t = theme::default();
-
-        let bb = container::bordered_box;
-
-        // let themer = themer(Background(color!(118, 150, 86)), text(1));
-
-        // Container::default();
-
-        let mut pos = 0;
-
-        let theme_fn = |theme: &Theme| {
-            let palette = theme.palette();
-            // palette.background.strong
-
-            // container::style(Pair {
-            //     color: color!(118, 150, 86).into(),
-            //     text: palette.text,
-            // })
-            let green = Background::Color(color!(118, 150, 86)).into();
-            let off_white = Background::Color(color!(238, 238, 210)).into();
-
-            let (x, y) = (pos / 8, pos % 8);
-            if (x + y) % 2 == 0 {
-                Style {
-                    background: green,
-                    ..Style::default()
-                }
-            } else {
-                Style {
-                    background: off_white,
+                container::Style {
+                    background: background_color,
                     ..Style::default()
                 }
             }
-
-            // Style {
-            //     background_color: color!(118, 150, 86).into(),
-            //     ..Style::default()
-            // }
-
-            // let x = pos;
-
-            // theme.style()
-
-            // theme.theme(state, window)
-            // match status {
-            //     button::Status::Active => {
-            //         button::Style::default()
-            //            .with_background(palette.success.strong.color)
-            //     }
-            //     _ => button::primary(theme, status),
-            // }
         };
 
-        let (x, y) = (0, 0);
-
-        let t01 = center(text(01)).style(theme_fn);
-        let t02 = center(text(02)).style(theme_fn);
-        let t03 = center(text(03)).style(theme_fn);
-        let t04 = center(text(04)).style(theme_fn);
-        let t05 = center(text(05)).style(theme_fn);
-        let t06 = center(text(06)).style(theme_fn);
-        let t07 = center(text(07)).style(theme_fn);
-        let t08 = center(text(08)).style(theme_fn);
-        let t09 = center(text(09)).style(theme_fn);
-        let t10 = center(text(10)).style(theme_fn);
-        let t11 = center(text(11)).style(theme_fn);
-        let t12 = center(text(12)).style(theme_fn);
-        let t13 = center(text(13)).style(theme_fn);
-        let t14 = center(text(14)).style(theme_fn);
-        let t15 = center(text(15)).style(theme_fn);
-        let t16 = center(text(16)).style(theme_fn);
-        let t17 = center(text(17)).style(theme_fn);
-        let t18 = center(text(18)).style(theme_fn);
-        let t19 = center(text(19)).style(theme_fn);
-        let t20 = center(text(20)).style(theme_fn);
-        let t21 = center(text(21)).style(theme_fn);
-        let t22 = center(text(22)).style(theme_fn);
-        let t23 = center(text(23)).style(theme_fn);
-        let t24 = center(text(24)).style(theme_fn);
-        let t25 = center(text(25)).style(theme_fn);
-        let t26 = center(text(26)).style(theme_fn);
-        let t27 = center(text(27)).style(theme_fn);
-        let t28 = center(text(28)).style(theme_fn);
-        let t29 = center(text(29)).style(theme_fn);
-        let t30 = center(text(30)).style(theme_fn);
-        let t31 = center(text(31)).style(theme_fn);
-        let t32 = center(text(32)).style(theme_fn);
-        let t33 = center(text(33)).style(theme_fn);
-        let t34 = center(text(34)).style(theme_fn);
-        let t35 = center(text(35)).style(theme_fn);
-        let t36 = center(text(36)).style(theme_fn);
-        let t37 = center(text(37)).style(theme_fn);
-        let t38 = center(text(38)).style(theme_fn);
-        let t39 = center(text(39)).style(theme_fn);
-        let t40 = center(text(40)).style(theme_fn);
-        let t41 = center(text(41)).style(theme_fn);
-        let t42 = center(text(42)).style(theme_fn);
-        let t43 = center(text(43)).style(theme_fn);
-        let t44 = center(text(44)).style(theme_fn);
-        let t45 = center(text(45)).style(theme_fn);
-        let t46 = center(text(46)).style(theme_fn);
-        let t47 = center(text(47)).style(theme_fn);
-        let t48 = center(text(48)).style(theme_fn);
-        let t49 = center(text(49)).style(theme_fn);
-        let t50 = center(text(50)).style(theme_fn);
-        let t51 = center(text(51)).style(theme_fn);
-        let t52 = center(text(52)).style(theme_fn);
-        let t53 = center(text(53)).style(theme_fn);
-        let t54 = center(text(54)).style(theme_fn);
-        let t55 = center(text(55)).style(theme_fn);
-        let t56 = center(text(56)).style(theme_fn);
-        let t57 = center(text(57)).style(theme_fn);
-        let t58 = center(text(58)).style(theme_fn);
-        let t59 = center(text(59)).style(theme_fn);
-        let t60 = center(text(60)).style(theme_fn);
-        let t61 = center(text(61)).style(theme_fn);
-        let t62 = center(text(62)).style(theme_fn);
-        let t63 = center(text(63)).style(theme_fn);
-        let t64 = center(text(64)).style(theme_fn);
-
+        // Create the board squares
+        let board_square_container_factory =
+            |pos| center(text(pos)).style(board_square_style_factory(pos));
         grid!(
-            t01, t02, t03, t04, t05, t06, t07, t08, t09, t10, t11, t12, t13, t14, t15, t16, t17,
-            t18, t19, t20, t21, t22, t23, t24, t25, t26, t27, t28, t29, t30, t31, t32, t33, t34,
-            t35, t36, t37, t38, t39, t40, t41, t42, t43, t44, t45, t46, t47, t48, t49, t50, t51,
-            t52, t53, t54, t55, t56, t57, t58, t59, t60, t61, t62, t63, t64
+            board_square_container_factory(00),
+            board_square_container_factory(01),
+            board_square_container_factory(02),
+            board_square_container_factory(03),
+            board_square_container_factory(04),
+            board_square_container_factory(05),
+            board_square_container_factory(06),
+            board_square_container_factory(07),
+            board_square_container_factory(08),
+            board_square_container_factory(09),
+            board_square_container_factory(10),
+            board_square_container_factory(11),
+            board_square_container_factory(12),
+            board_square_container_factory(13),
+            board_square_container_factory(14),
+            board_square_container_factory(15),
+            board_square_container_factory(16),
+            board_square_container_factory(17),
+            board_square_container_factory(18),
+            board_square_container_factory(19),
+            board_square_container_factory(20),
+            board_square_container_factory(21),
+            board_square_container_factory(22),
+            board_square_container_factory(23),
+            board_square_container_factory(24),
+            board_square_container_factory(25),
+            board_square_container_factory(26),
+            board_square_container_factory(27),
+            board_square_container_factory(28),
+            board_square_container_factory(29),
+            board_square_container_factory(30),
+            board_square_container_factory(31),
+            board_square_container_factory(32),
+            board_square_container_factory(33),
+            board_square_container_factory(34),
+            board_square_container_factory(35),
+            board_square_container_factory(36),
+            board_square_container_factory(37),
+            board_square_container_factory(38),
+            board_square_container_factory(39),
+            board_square_container_factory(40),
+            board_square_container_factory(41),
+            board_square_container_factory(42),
+            board_square_container_factory(43),
+            board_square_container_factory(44),
+            board_square_container_factory(45),
+            board_square_container_factory(46),
+            board_square_container_factory(47),
+            board_square_container_factory(48),
+            board_square_container_factory(49),
+            board_square_container_factory(50),
+            board_square_container_factory(51),
+            board_square_container_factory(52),
+            board_square_container_factory(53),
+            board_square_container_factory(54),
+            board_square_container_factory(55),
+            board_square_container_factory(56),
+            board_square_container_factory(57),
+            board_square_container_factory(58),
+            board_square_container_factory(59),
+            board_square_container_factory(60),
+            board_square_container_factory(61),
+            board_square_container_factory(62),
+            board_square_container_factory(63)
         )
         .columns(8)
     }
@@ -174,48 +119,6 @@ impl Counter {
             }
         }
     }
-
-    // pub fn grid_theme(pos: i32) -> Fn(&Theme) {
-    //     let x = pos / 8;
-    //     let y = pos % 8;
-    //     let primary = container::primary;
-    //     let secondary = container::secondary;
-    //     if (x + y) % 2 == 0 {
-    //         primary
-    //     }
-    //     else
-    //     {
-    //         secondary
-    //     }
-    // }
-
-    // pub fn white_grid_theme(pos: i32) -> Fn(&Theme) {
-    //     let x = pos / 8;
-    //     let y = pos % 8;
-    //     let primary = container::primary;
-    //     let secondary = container::secondary;
-    //     if (x + y) % 2 == 0 {
-    //         primary
-    //     }
-    //     else
-    //     {
-    //         secondary
-    //     }
-    // }
-
-    // pub fn green_grid_theme(pos: i32) -> Fn(&Theme) {
-    //     let x = pos / 8;
-    //     let y = pos % 8;
-    //     let primary = container::primary;
-    //     let secondary = container::secondary;
-    //     if (x + y) % 2 == 0 {
-    //         primary
-    //     }
-    //     else
-    //     {
-    //         secondary
-    //     }
-    // }
 }
 
 fn main() -> iced::Result {
