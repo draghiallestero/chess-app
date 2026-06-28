@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "cargo run -p ui",
+            "cwd": "${workspaceFolder}/ui",
+            "program": "${workspaceFolder}/ui/target/debug/ui",
+            "environment": [
+                {
+                    "name": "RUST_BACKTRACE",
+                    "value": "short"
+                }
+            ],
+            "args": [],
+            "sourceFileMap": {},
+            "osx": {
+                "MIMode": "lldb"
+            },
+
+            "preLaunchTask": "Format"
+        }
+    ]
+}
