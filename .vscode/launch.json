@@ -18,6 +18,25 @@
                 "MIMode": "lldb"
             },
             "preLaunchTask": "Build UI"
+        },
+        {
+            "type": "cppdbg",
+            "request": "launch",
+            "name": "Run UI Release",
+            "cwd": "${workspaceFolder}/ui",
+            "program": "${workspaceFolder}/ui/target/release/ui",
+            "environment": [
+                {
+                    "name": "RUST_BACKTRACE",
+                    "value": "short"
+                }
+            ],
+            "args": [],
+            "sourceFileMap": {},
+            "osx": {
+                "MIMode": "lldb"
+            },
+            "preLaunchTask": "Build UI Release"
         }
     ]
 }

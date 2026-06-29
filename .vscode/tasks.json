@@ -25,6 +25,26 @@
             "dependsOn": [
                 "Format"
             ]
+        },
+        {
+            "label": "Build UI Release",
+            "type": "cargo",
+            "command": "build",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": {
+                "kind": "build",
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/ui"
+            },
+            "args": [
+                "--release"
+            ],
+            "dependsOn": [
+                "Format"
+            ]
         }
     ]
 }
