@@ -59,7 +59,7 @@ impl Default for BoardWidget {
 #[derive(Clone)]
 pub enum Message {
     HoldPiece((u8, String)),
-    ReleasePiece,
+    ReleasePiece(u8),
     MouseMoved(Point),
 }
 
@@ -189,7 +189,7 @@ impl BoardWidget {
             // Create the mouse area that will inform us of clicks
             mouse_area(text_widget)
                 .on_press(Message::HoldPiece((pos, square_text)))
-                .on_release(Message::ReleasePiece)
+                .on_release(Message::ReleasePiece(pos))
         };
 
         // Create the floating piece
@@ -288,11 +288,13 @@ impl BoardWidget {
                 println!("HoldPiece");
                 self.held_piece = held_piece.into()
             }
-            Message::ReleasePiece =>
-            // Some complicated stuff about making a move, idk
-            {
+            Message::ReleasePiece(target) => {
                 println!("ReleasePiece");
-                self.held_piece = None
+                self.held_piece = None;
+                match self.legal_moves.iter().find(|_move| _move.to == target) {
+                    Some(_move) => self.board = self.board.apply_move(_move).flip_view(),
+                    None => (),
+                };
             }
             Message::MouseMoved(pos) => {
                 println!("{}", pos);

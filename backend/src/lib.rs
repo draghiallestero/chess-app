@@ -395,7 +395,7 @@ impl Board {
         moves
     }
 
-    pub fn apply_move(&self, move_to_apply: Move) -> Board {
+    pub fn apply_move(&self, move_to_apply: &Move) -> Board {
         // Need to really redo this
         let mut new_board = *self;
 
@@ -437,6 +437,13 @@ impl Board {
         }
 
         new_board
+    }
+
+    pub fn flip_view(&self) -> Board {
+        Board {
+            player: self.opponent.flip_view(),
+            opponent: self.player.flip_view(),
+        }
     }
 }
 
