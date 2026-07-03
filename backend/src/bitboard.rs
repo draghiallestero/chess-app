@@ -1,7 +1,7 @@
 use std::ops::BitAnd;
 use std::ops::BitOr;
 
-#[derive(Default, Copy, Clone)]
+#[derive(Default, Clone, Copy)]
 pub struct BitBoard {
     pub board: u64,
 }

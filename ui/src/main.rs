@@ -1,11 +1,16 @@
+use std::alloc::dealloc;
 use std::mem::swap;
 
 use backend::BitBoard;
 use backend::Board;
+use backend::Move;
 use bit_iter::BitIter;
 use iced::Background;
+use iced::Border;
 use iced::Event;
 use iced::Point;
+use iced::Program;
+use iced::Size;
 use iced::Subscription;
 use iced::Theme;
 use iced::Vector;
@@ -15,61 +20,117 @@ use iced::event;
 use iced::mouse;
 use iced::theme;
 use iced::widget::MouseArea;
+use iced::widget::Text;
 use iced::widget::container::Style;
 use iced::widget::float;
 use iced::widget::mouse_area;
+use iced::widget::pane_grid::default;
 use iced::widget::pin;
 use iced::widget::row;
 use iced::widget::{
     Column, Container, Grid, Stack, button, center, column, container, grid, stack, text, themer,
 };
+use iced::window;
+use iced::window::Position;
+use iced::window::Settings;
 
-#[derive(Default)]
 struct BoardWidget {
     board: Board,
-    dragged_piece: Option<(usize, String)>,
+    held_piece: Option<(u8, String)>,
     mouse_pos: Point,
+    move_count: i32,
+    legal_moves: Vec<Move>,
+}
+
+impl Default for BoardWidget {
+    fn default() -> Self {
+        let board = Board::default();
+        let legal_moves = board.generate_legal_moves();
+        BoardWidget {
+            board: board,
+            held_piece: None,
+            mouse_pos: Point::default(),
+            move_count: 0,
+            legal_moves: legal_moves,
+        }
+    }
 }
 
 #[derive(Clone)]
 pub enum Message {
-    HoldDraggedPiece((usize, String)),
-    ReleaseDraggedPiece,
+    HoldPiece((u8, String)),
+    ReleasePiece,
     MouseMoved(Point),
+}
+
+#[derive(Clone)]
+pub struct PieceTextMap {
+    pawns: &'static str,
+    rooks: &'static str,
+    knights: &'static str,
+    bishops: &'static str,
+    queens: &'static str,
+    kings: &'static str,
+}
+
+impl PieceTextMap {
+    pub fn new(move_count: i32) -> PieceTextMap {
+        if move_count % 2 == 0 {
+            PieceTextMap {
+                pawns: "♙",
+                rooks: "♖",
+                knights: "♘",
+                bishops: "♗",
+                queens: "♕",
+                kings: "♔",
+            }
+        } else {
+            PieceTextMap {
+                pawns: "♟",
+                rooks: "♜",
+                knights: "♞",
+                bishops: "♝",
+                queens: "♛",
+                kings: "♚",
+            }
+        }
+    }
 }
 
 impl BoardWidget {
     pub fn view(&'_ self) -> MouseArea<'_, Message> {
         let text_size = 100;
 
-        // Create the style for the board squares
-        let board_square_style_factory = |pos| {
-            move |_: &Theme| {
-                let off_white = Background::Color(color!(238, 238, 210)).into();
-                let green = Background::Color(color!(118, 150, 86)).into();
+        // Determine player and opponent text maps
+        let player_piece_text_map = PieceTextMap::new(self.move_count);
+        let opponent_piece_text_map = PieceTextMap::new(self.move_count + 1);
 
-                let (x, y) = (pos / 8, pos % 8);
-                let background_color = { if (x + y) % 2 == 0 { off_white } else { green } };
-
-                container::Style {
-                    background: background_color,
-                    ..Style::default()
-                }
-            }
+        // Which squares the held piece can be moved to
+        let legal_move_targets = match self.held_piece {
+            Some((from, _)) => self
+                .legal_moves
+                .iter()
+                .filter(|_move| _move.from == from)
+                .map(|_move| _move.to as u8)
+                .collect(),
+            None => Vec::default(),
         };
+
+        println!("legal_move_targets: {:?}", legal_move_targets);
 
         // Create the board squares
         let board_square_widget_factory = |pos| {
             // Figure out what to display
+            let pos = pos as u8;
             let mut square_text = String::default();
             let mut process_piece = |piece: BitBoard, piece_str| {
-                let result = BitIter::from(piece.board).find(move |x| *x == pos);
+                let result = BitIter::from(piece.board).find(move |x| (*x) as u8 == pos);
                 match result {
                     Some(_) => {
                         // Pieces being dragged are empty
-                        match &self.dragged_piece {
-                            Some((dragged_pos, _)) => {
-                                if pos == *dragged_pos {
+                        match &self.held_piece {
+                            Some((held_pos, _)) => {
+                                if pos == *held_pos {
                                     return;
                                 }
                             }
@@ -80,30 +141,60 @@ impl BoardWidget {
                     None => return,
                 };
             };
-            process_piece(self.board.player.pawns, "♙");
-            process_piece(self.board.player.rooks, "♖");
-            process_piece(self.board.player.knights, "♘");
-            process_piece(self.board.player.bishops, "♗");
-            process_piece(self.board.player.queens, "♕");
-            process_piece(self.board.player.kings, "♔");
-            process_piece(self.board.opponent.pawns, "♟");
-            process_piece(self.board.opponent.rooks, "♜");
-            process_piece(self.board.opponent.knights, "♞");
-            process_piece(self.board.opponent.bishops, "♝");
-            process_piece(self.board.opponent.queens, "♛");
-            process_piece(self.board.opponent.kings, "♚");
-            let text_widget = center(text(square_text.clone()).size(text_size))
-                .style(board_square_style_factory(pos));
+            process_piece(self.board.player.pawns, player_piece_text_map.pawns);
+            process_piece(self.board.player.rooks, player_piece_text_map.rooks);
+            process_piece(self.board.player.knights, player_piece_text_map.knights);
+            process_piece(self.board.player.bishops, player_piece_text_map.bishops);
+            process_piece(self.board.player.queens, player_piece_text_map.queens);
+            process_piece(self.board.player.kings, player_piece_text_map.kings);
+            process_piece(self.board.opponent.pawns, opponent_piece_text_map.pawns);
+            process_piece(self.board.opponent.rooks, opponent_piece_text_map.rooks);
+            process_piece(self.board.opponent.knights, opponent_piece_text_map.knights);
+            process_piece(self.board.opponent.bishops, opponent_piece_text_map.bishops);
+            process_piece(self.board.opponent.queens, opponent_piece_text_map.queens);
+            process_piece(self.board.opponent.kings, opponent_piece_text_map.kings);
+
+            // Create the style for the board squares
+            let style_fn_factory = || {
+                let (x, y) = (pos / 8, pos % 8);
+
+                let off_white = Background::Color(color!(238, 238, 210)).into();
+                let green = Background::Color(color!(118, 150, 86)).into();
+                let background_color = { if (x + y) % 2 == 0 { off_white } else { green } };
+
+                // let border_color = color!(247, 212, 102);
+                let border_color = color!(82, 170, 243);
+                // let border_color = color!(235, 110, 78);
+                let border_width = if legal_move_targets.iter().any(|x| *x == pos) {
+                    10.0
+                } else {
+                    0.0
+                };
+                let border = Border {
+                    color: border_color,
+                    width: border_width,
+                    ..Border::default()
+                };
+
+                move |_: &Theme| container::Style {
+                    background: background_color,
+                    border: border,
+                    ..Style::default()
+                }
+            };
+
+            let text_widget =
+                center(text(square_text.clone()).size(text_size)).style(style_fn_factory());
 
             // Create the mouse area that will inform us of clicks
             mouse_area(text_widget)
-                .on_press(Message::HoldDraggedPiece((pos, square_text)))
-                .on_release(Message::ReleaseDraggedPiece)
+                .on_press(Message::HoldPiece((pos, square_text)))
+                .on_release(Message::ReleasePiece)
         };
 
         // Create the floating piece
         let floating_piece = float(center(
-            text(match &self.dragged_piece {
+            text(match &self.held_piece {
                 Some((_, piece_str)) => piece_str.clone(),
                 None => String::default(),
             })
@@ -193,15 +284,15 @@ impl BoardWidget {
 
     pub fn update(&mut self, message: Message) {
         match message {
-            Message::HoldDraggedPiece(dragged_piece) => {
-                println!("HoldDraggedPiece");
-                self.dragged_piece = dragged_piece.into()
+            Message::HoldPiece(held_piece) => {
+                println!("HoldPiece");
+                self.held_piece = held_piece.into()
             }
-            Message::ReleaseDraggedPiece =>
+            Message::ReleasePiece =>
             // Some complicated stuff about making a move, idk
             {
-                println!("ReleaseDraggedPiece");
-                self.dragged_piece = None
+                println!("ReleasePiece");
+                self.held_piece = None
             }
             Message::MouseMoved(pos) => {
                 println!("{}", pos);
@@ -218,5 +309,9 @@ fn main() -> iced::Result {
         .title("Alessandro's Chess Application")
         // .subscription(BoardWidget::subscription)
         // .resizable(false)
+        .window_size(Size {
+            width: 1000.0,
+            height: 1000.0,
+        })
         .run()
 }

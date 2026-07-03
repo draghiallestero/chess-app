@@ -1,11 +1,15 @@
 pub mod bitboard;
 pub use bitboard::BitBoard;
-use std::{iter::StepBy, ops::Range, sync::LazyLock};
+use std::{
+    iter::StepBy,
+    ops::{Neg, Not, Range},
+    sync::LazyLock,
+};
 
 use arrayvec::ArrayVec;
 use bit_iter::BitIter;
 
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Player {
     pub pawns: BitBoard,
     pub rooks: BitBoard,
@@ -32,6 +36,7 @@ impl Player {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Board {
     pub player: Player,
     pub opponent: Player,
@@ -389,6 +394,50 @@ impl Board {
 
         moves
     }
+
+    pub fn apply_move(&self, move_to_apply: Move) -> Board {
+        // Need to really redo this
+        let mut new_board = *self;
+
+        for pos in BitIter::from(new_board.player.pawns.board).map(|x| x as u8) {
+            if pos == move_to_apply.from {
+                new_board.player.pawns.board &= !(1 << pos);
+                new_board.player.pawns.board |= 1 << move_to_apply.to;
+            }
+        }
+        for pos in BitIter::from(new_board.player.rooks.board).map(|x| x as u8) {
+            if pos == move_to_apply.from {
+                new_board.player.rooks.board &= !(1 << pos);
+                new_board.player.rooks.board |= 1 << move_to_apply.to;
+            }
+        }
+        for pos in BitIter::from(new_board.player.knights.board).map(|x| x as u8) {
+            if pos == move_to_apply.from {
+                new_board.player.knights.board &= !(1 << pos);
+                new_board.player.knights.board |= 1 << move_to_apply.to;
+            }
+        }
+        for pos in BitIter::from(new_board.player.bishops.board).map(|x| x as u8) {
+            if pos == move_to_apply.from {
+                new_board.player.bishops.board &= !(1 << pos);
+                new_board.player.bishops.board |= 1 << move_to_apply.to;
+            }
+        }
+        for pos in BitIter::from(new_board.player.queens.board).map(|x| x as u8) {
+            if pos == move_to_apply.from {
+                new_board.player.queens.board &= !(1 << pos);
+                new_board.player.queens.board |= 1 << move_to_apply.to;
+            }
+        }
+        for pos in BitIter::from(new_board.player.kings.board).map(|x| x as u8) {
+            if pos == move_to_apply.from {
+                new_board.player.kings.board &= !(1 << pos);
+                new_board.player.kings.board |= 1 << move_to_apply.to;
+            }
+        }
+
+        new_board
+    }
 }
 
 impl Default for Board {
@@ -446,8 +495,8 @@ pub struct Square {
 }
 
 pub struct Move {
-    from: u8,
-    to: u8,
+    pub from: u8,
+    pub to: u8,
 }
 
 #[cfg(test)]
