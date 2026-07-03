@@ -1,41 +1,38 @@
 {
     "configurations": [
         {
-            "type": "cppdbg",
+            "type": "lldb",
             "request": "launch",
             "name": "Run UI",
-            "cwd": "${workspaceFolder}/ui",
-            "program": "${workspaceFolder}/ui/target/debug/ui",
-            "environment": [
-                {
-                    "name": "RUST_BACKTRACE",
-                    "value": "short"
-                }
-            ],
-            "args": [],
-            "sourceFileMap": {},
-            "osx": {
-                "MIMode": "lldb"
+            "cargo": {
+                "args": [
+                    "build"
+                ],
+                "filter": {
+                    "name": "ui",
+                    "kind": "bin"
+                },
+                "cwd": "${workspaceFolder}/ui"
             },
+            "args": [],
             "preLaunchTask": "Build UI"
         },
         {
-            "type": "cppdbg",
+            "type": "lldb",
             "request": "launch",
             "name": "Run UI Release",
-            "cwd": "${workspaceFolder}/ui",
-            "program": "${workspaceFolder}/ui/target/release/ui",
-            "environment": [
-                {
-                    "name": "RUST_BACKTRACE",
-                    "value": "short"
-                }
-            ],
-            "args": [],
-            "sourceFileMap": {},
-            "osx": {
-                "MIMode": "lldb"
+            "cargo": {
+                "args": [
+                    "build",
+                    "--release"
+                ],
+                "filter": {
+                    "name": "ui",
+                    "kind": "bin"
+                },
+                "cwd": "${workspaceFolder}/ui"
             },
+            "args": [],
             "preLaunchTask": "Build UI Release"
         }
     ]

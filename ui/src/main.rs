@@ -36,7 +36,7 @@ use iced::window::Settings;
 
 struct BoardWidget {
     board: Board,
-    held_piece: Option<(u8, String)>,
+    held_piece_pos: Option<u8>,
     mouse_pos: Point,
     move_count: i32,
     legal_moves: Vec<Move>,
@@ -48,7 +48,7 @@ impl Default for BoardWidget {
         let legal_moves = board.generate_legal_moves();
         BoardWidget {
             board: board,
-            held_piece: None,
+            held_piece_pos: None,
             mouse_pos: Point::default(),
             move_count: 0,
             legal_moves: legal_moves,
@@ -58,7 +58,7 @@ impl Default for BoardWidget {
 
 #[derive(Clone)]
 pub enum Message {
-    HoldPiece((u8, String)),
+    HoldPiece(u8),
     ReleasePiece(u8),
     MouseMoved(Point),
 }
@@ -81,8 +81,8 @@ impl PieceTextMap {
                 rooks: "♖",
                 knights: "♘",
                 bishops: "♗",
-                queens: "♕",
-                kings: "♔",
+                queens: "♔",
+                kings: "♕",
             }
         } else {
             PieceTextMap {
@@ -90,8 +90,8 @@ impl PieceTextMap {
                 rooks: "♜",
                 knights: "♞",
                 bishops: "♝",
-                queens: "♛",
-                kings: "♚",
+                queens: "♚",
+                kings: "♛",
             }
         }
     }
@@ -106,8 +106,8 @@ impl BoardWidget {
         let opponent_piece_text_map = PieceTextMap::new(self.move_count + 1);
 
         // Which squares the held piece can be moved to
-        let legal_move_targets = match self.held_piece {
-            Some((from, _)) => self
+        let legal_move_targets = match self.held_piece_pos {
+            Some(from) => self
                 .legal_moves
                 .iter()
                 .filter(|_move| _move.from == from)
@@ -116,30 +116,15 @@ impl BoardWidget {
             None => Vec::default(),
         };
 
-        println!("legal_move_targets: {:?}", legal_move_targets);
-
-        // Create the board squares
-        let board_square_widget_factory = |pos| {
-            // Figure out what to display
-            let pos = pos as u8;
-            let mut square_text = String::default();
-            let mut process_piece = |piece: BitBoard, piece_str| {
-                let result = BitIter::from(piece.board).find(move |x| (*x) as u8 == pos);
-                match result {
-                    Some(_) => {
-                        // Pieces being dragged are empty
-                        match &self.held_piece {
-                            Some((held_pos, _)) => {
-                                if pos == *held_pos {
-                                    return;
-                                }
-                            }
-                            None => (),
-                        }
-                        square_text = String::from(piece_str);
-                    }
-                    None => return,
-                };
+        // Figure out text what to print on the board
+        let mut board_square_text: [&'static str; 64] = std::array::from_fn(|pos| {
+            // Process pieces
+            let mut square_text: Option<&'static str> = None;
+            let mut process_piece = |piece: BitBoard, piece_text| {
+                // Do nothing if text was found
+                if !square_text.is_some() && piece.get(pos as u8) {
+                    square_text = Some(piece_text);
+                }
             };
             process_piece(self.board.player.pawns, player_piece_text_map.pawns);
             process_piece(self.board.player.rooks, player_piece_text_map.rooks);
@@ -153,6 +138,31 @@ impl BoardWidget {
             process_piece(self.board.opponent.bishops, opponent_piece_text_map.bishops);
             process_piece(self.board.opponent.queens, opponent_piece_text_map.queens);
             process_piece(self.board.opponent.kings, opponent_piece_text_map.kings);
+
+            square_text.unwrap_or("")
+        });
+
+        // Handle floating square
+        let floating_square = float(center(
+            text(match self.held_piece_pos {
+                Some(pos) => {
+                    let floating_square_text = board_square_text[pos as usize];
+                    board_square_text[pos as usize] = "";
+                    floating_square_text
+                }
+                None => "",
+            })
+            .size(text_size),
+        ))
+        .translate(move |r1, r2| Vector {
+            x: self.mouse_pos.x - r1.width / 2.0,
+            y: self.mouse_pos.y - r1.height / 2.0,
+        });
+
+        // Create the board squares
+        let board_square_widget_factory = |pos| {
+            // Figure out what to display
+            let pos = pos as u8;
 
             // Create the style for the board squares
             let style_fn_factory = || {
@@ -183,27 +193,14 @@ impl BoardWidget {
                 }
             };
 
-            let text_widget =
-                center(text(square_text.clone()).size(text_size)).style(style_fn_factory());
+            let text_widget = center(text(board_square_text[pos as usize]).size(text_size))
+                .style(style_fn_factory());
 
             // Create the mouse area that will inform us of clicks
             mouse_area(text_widget)
-                .on_press(Message::HoldPiece((pos, square_text)))
+                .on_press(Message::HoldPiece(pos))
                 .on_release(Message::ReleasePiece(pos))
         };
-
-        // Create the floating piece
-        let floating_piece = float(center(
-            text(match &self.held_piece {
-                Some((_, piece_str)) => piece_str.clone(),
-                None => String::default(),
-            })
-            .size(text_size),
-        ))
-        .translate(move |r1, r2| Vector {
-            x: self.mouse_pos.x - r1.width / 2.0,
-            y: self.mouse_pos.y - r1.height / 2.0,
-        });
 
         // Create the mouse area of the overall application
         let mouse_area_widget_applicator =
@@ -278,7 +275,7 @@ impl BoardWidget {
                 board_square_widget_factory(07),
             )
             .columns(8),
-            floating_piece
+            floating_square
         ])
     }
 
@@ -286,15 +283,23 @@ impl BoardWidget {
         match message {
             Message::HoldPiece(held_piece) => {
                 println!("HoldPiece");
-                self.held_piece = held_piece.into()
+                self.held_piece_pos = held_piece.into()
             }
             Message::ReleasePiece(target) => {
                 println!("ReleasePiece");
-                self.held_piece = None;
-                match self.legal_moves.iter().find(|_move| _move.to == target) {
-                    Some(_move) => self.board = self.board.apply_move(_move).flip_view(),
+                match self
+                    .legal_moves
+                    .iter()
+                    .find(|_move| _move.from == self.held_piece_pos.unwrap() && _move.to == target)
+                {
+                    Some(_move) => {
+                        self.board = self.board.apply_move(_move).flip_view();
+                        self.legal_moves = self.board.generate_legal_moves();
+                        self.move_count += 1;
+                    }
                     None => (),
                 };
+                self.held_piece_pos = None;
             }
             Message::MouseMoved(pos) => {
                 println!("{}", pos);
