@@ -81,8 +81,8 @@ impl PieceTextMap {
                 rooks: "♖",
                 knights: "♘",
                 bishops: "♗",
-                queens: "♔",
-                kings: "♕",
+                queens: "♕",
+                kings: "♔",
             }
         } else {
             PieceTextMap {
@@ -90,8 +90,8 @@ impl PieceTextMap {
                 rooks: "♜",
                 knights: "♞",
                 bishops: "♝",
-                queens: "♚",
-                kings: "♛",
+                queens: "♛",
+                kings: "♚",
             }
         }
     }
@@ -281,28 +281,27 @@ impl BoardWidget {
 
     pub fn update(&mut self, message: Message) {
         match message {
-            Message::HoldPiece(held_piece) => {
-                println!("HoldPiece");
-                self.held_piece_pos = held_piece.into()
-            }
+            Message::HoldPiece(held_piece) => self.held_piece_pos = held_piece.into(),
             Message::ReleasePiece(target) => {
-                println!("ReleasePiece");
                 match self
                     .legal_moves
                     .iter()
                     .find(|_move| _move.from == self.held_piece_pos.unwrap() && _move.to == target)
                 {
                     Some(_move) => {
-                        self.board = self.board.apply_move(_move).flip_view();
+                        // self.board = self.board.apply_move(_move).flip_view();
+                        // self.legal_moves = self.board.generate_legal_moves();
+                        // self.move_count += 1;
+
+                        self.board = _move.board;
                         self.legal_moves = self.board.generate_legal_moves();
-                        self.move_count += 1;
+                        self.move_count += 2;
                     }
                     None => (),
                 };
                 self.held_piece_pos = None;
             }
             Message::MouseMoved(pos) => {
-                println!("{}", pos);
                 self.mouse_pos = pos;
             }
         }

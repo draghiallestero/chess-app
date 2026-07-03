@@ -16,6 +16,9 @@ impl BitBoard {
     pub fn set(&mut self, pos: u8) {
         self.board |= 1u64 << pos;
     }
+    pub fn unset(&mut self, pos: u8) {
+        self.board &= !(1u64 << pos);
+    }
     pub fn count(&self) -> u8 {
         self.board.count_ones() as u8
     }

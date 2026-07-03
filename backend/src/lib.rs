@@ -1,4 +1,5 @@
 pub mod bitboard;
+pub mod move_sets;
 pub use bitboard::BitBoard;
 use std::{
     iter::StepBy,
@@ -9,6 +10,21 @@ use std::{
 use arrayvec::ArrayVec;
 use bit_iter::BitIter;
 
+use crate::move_sets::{
+    BISHOP_TARGET_POS_LISTS_2D, KING_TARGET_POS_LISTS_2D, KNIGHT_TARGET_POS_LISTS_2D,
+    PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D,
+    ROOK_TARGET_POS_LISTS_2D,
+};
+
+#[derive(Default, Clone, Copy)]
+enum CastlingStatus {
+    #[default]
+    BothAvailable,
+    KingSideAvailable,
+    QueenSideAvailable,
+    Unavailable,
+}
+
 #[derive(Default, Clone, Copy)]
 pub struct Player {
     pub pawns: BitBoard,
@@ -17,6 +33,7 @@ pub struct Player {
     pub bishops: BitBoard,
     pub queens: BitBoard,
     pub kings: BitBoard,
+    pub castling_status: CastlingStatus,
 }
 
 impl Player {
@@ -32,275 +49,79 @@ impl Player {
             bishops: self.bishops.reverse_bits(),
             queens: self.queens.reverse_bits(),
             kings: self.kings.reverse_bits(),
+            ..*self
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum EnPassantStatus {
+    Unavailable,
+    Available,
+    Consumed,
 }
 
 #[derive(Clone, Copy)]
 pub struct Board {
     pub player: Player,
     pub opponent: Player,
+
+    en_passant_available: EnPassantStatus,
 }
-
-fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
-    target_pos_lists_2d: &mut [[ArrayVec<u8, 7>; DIRECTIONS]; 64],
-    cardinals: bool,
-    diagonals: bool,
-) {
-    // Utility
-    let to_pos = |rank, file| 8 * rank + file;
-
-    // Process each direction
-    for pos in 0u8..64u8 {
-        let current_target_pos_lists = &mut target_pos_lists_2d[pos as usize];
-        let (rank, file) = (pos / 8, pos % 8);
-
-        let mut current_rank;
-        let mut current_file;
-        let mut current_direction = 0;
-
-        if cardinals {
-            // West
-            current_rank = rank;
-            current_file = file;
-            current_direction = 0;
-            while current_file > 0 {
-                current_file -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-            // East
-            current_rank = rank;
-            current_file = file;
-            current_direction += 1;
-            while current_file < 7 {
-                current_file += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-            // North
-            current_rank = rank;
-            current_file = file;
-            current_direction += 1;
-            while current_rank < 7 {
-                current_rank += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-            // South
-            current_rank = rank;
-            current_file = file;
-            current_direction += 1;
-            while current_rank > 0 {
-                current_rank -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-        }
-        if diagonals {
-            // South-west
-            current_rank = rank;
-            current_file = file;
-            current_direction += if current_direction == 0 { 0 } else { 1 };
-            while current_rank > 0 && current_file > 0 {
-                current_rank -= 1;
-                current_file -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-            // South-east
-            current_rank = rank;
-            current_file = file;
-            current_direction += 1;
-            while current_rank > 0 && current_file < 7 {
-                current_rank -= 1;
-                current_file += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-            // North-east
-            current_rank = rank;
-            current_file = file;
-            current_direction += 1;
-            while current_rank < 7 && current_file < 7 {
-                current_rank += 1;
-                current_file += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-            // North-west
-            current_rank = rank;
-            current_file = file;
-            current_direction += 1;
-            while current_rank < 7 && current_file > 0 {
-                current_rank += 1;
-                current_file -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
-            }
-        }
-    }
-}
-
-// Rooks can slide along the cardinal directions
-static ROOK_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 4]; 64]> = LazyLock::new(|| {
-    let mut target_pos_lists_2d: [[ArrayVec<u8, 7>; 4]; 64] =
-        std::array::from_fn(|_| std::array::from_fn(|_| ArrayVec::<u8, 7>::new()));
-    generate_sliding_piece_target_pos_lists_2d(&mut target_pos_lists_2d, true, false);
-    target_pos_lists_2d
-});
-
-// Knights can move over two squares then one square, either first horizontally or first vertically
-static KNIGHT_TARGET_POS_LISTS: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(|| {
-    let to_pos = |rank, file| 8 * rank + file;
-
-    let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 8>::new());
-    for pos in 0u8..64u8 {
-        let current_target_pos_list = &mut target_pos_lists[pos as usize];
-        let (rank, file) = (pos / 8, pos % 8);
-
-        // Constraints
-        let ranks_from_top = 7 - rank;
-        let ranks_from_bottom = rank;
-        let files_from_left = file;
-        let files_from_right = 7 - file;
-
-        // West-south-west corner
-        if ranks_from_bottom >= 1 && files_from_left >= 2 {
-            current_target_pos_list.push(to_pos(rank - 1, file - 2));
-        }
-        // South-south-west corner
-        if ranks_from_bottom >= 2 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank - 2, file - 1));
-        }
-        // South-south-east corner
-        if ranks_from_bottom >= 2 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank - 2, file + 1));
-        }
-        // East-south-east corner
-        if ranks_from_bottom >= 1 && files_from_right >= 2 {
-            current_target_pos_list.push(to_pos(rank - 1, file + 2));
-        }
-        // East-north-east corner
-        if ranks_from_top >= 1 && files_from_right >= 2 {
-            current_target_pos_list.push(to_pos(rank + 1, file + 2));
-        }
-        // North-north-east corner
-        if ranks_from_top >= 2 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank + 2, file + 1));
-        }
-        // North-north-west corner
-        if ranks_from_top >= 2 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank + 2, file - 1));
-        }
-        // West-north-west corner
-        if ranks_from_top >= 1 && files_from_left >= 2 {
-            current_target_pos_list.push(to_pos(rank + 1, file - 2));
-        }
-    }
-    target_pos_lists
-});
-
-// Bishops can slide along the diagonal directions
-static BISHOP_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 4]; 64]> = LazyLock::new(|| {
-    let mut target_pos_lists_2d: [[ArrayVec<u8, 7>; 4]; 64] =
-        std::array::from_fn(|_| std::array::from_fn(|_| ArrayVec::<u8, 7>::new()));
-    generate_sliding_piece_target_pos_lists_2d(&mut target_pos_lists_2d, false, true);
-    target_pos_lists_2d
-});
-
-// Queens can slide along the cardinal and diagonal directions
-static QUEEN_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 8]; 64]> = LazyLock::new(|| {
-    let mut target_pos_lists_2d: [[ArrayVec<u8, 7>; 8]; 64] =
-        std::array::from_fn(|_| std::array::from_fn(|_| ArrayVec::<u8, 7>::new()));
-    generate_sliding_piece_target_pos_lists_2d(&mut target_pos_lists_2d, true, true);
-    target_pos_lists_2d
-});
-
-// Kings can move one square in any direction
-static KING_TARGET_POS_LISTS: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(|| {
-    let to_pos = |rank, file| 8 * rank + file;
-
-    let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 8>::new());
-    for pos in 0u8..64u8 {
-        let current_target_pos_list = &mut target_pos_lists[pos as usize];
-        let (rank, file) = (pos / 8, pos % 8);
-
-        // Constraints
-        let ranks_from_top = 7 - rank;
-        let ranks_from_bottom = rank;
-        let files_from_left = file;
-        let files_from_right = 7 - file;
-
-        // West
-        if files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank, file - 1));
-        }
-        // South-west
-        if ranks_from_bottom >= 1 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank - 1, file - 1));
-        }
-        // South
-        if ranks_from_bottom >= 1 {
-            current_target_pos_list.push(to_pos(rank - 1, file));
-        }
-        // South-east
-        if ranks_from_bottom >= 1 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank - 1, file + 1));
-        }
-        // East
-        if files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank, file + 1));
-        }
-        // North-east
-        if ranks_from_top >= 1 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank + 1, file + 1));
-        }
-        // North
-        if ranks_from_top >= 1 {
-            current_target_pos_list.push(to_pos(rank + 1, file));
-        }
-        // North-West
-        if ranks_from_top >= 1 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank + 1, file - 1));
-        }
-    }
-    target_pos_lists
-});
 
 impl Board {
     pub fn generate_legal_moves(&self) -> Vec<Move> {
+        // Setup return vector
         let mut moves = Vec::new();
+        let mut try_add_move = |pos, target_pos, new_board: Board| {
+            if !new_board.is_king_in_check() {
+                moves.push(Move {
+                    from: pos,
+                    to: target_pos,
+                    board: new_board,
+                })
+            }
+        };
 
         // Occupied squares
         let player_occupied_squares = self.player.occupied_squares();
         let opponent_occupied_squares = self.opponent.occupied_squares();
         let occupied_squares = player_occupied_squares | opponent_occupied_squares;
 
-        // Pawns
-        let mut pawn_count = self.player.pawns.count();
-        let mut check_and_push_pawn_move = |pos, target_pos| {
-            let target_pos_free = !occupied_squares.get(target_pos);
-            if target_pos_free {
-                let new_move = Move {
-                    from: pos,
-                    to: target_pos,
-                };
-                moves.push(new_move);
-            }
+        // Attack utilities
+        let remove_opponent_piece = |new_board: &mut Board, attack_pos: u8| {
+            new_board.opponent.pawns.unset(attack_pos);
+            new_board.opponent.rooks.unset(attack_pos);
+            new_board.opponent.knights.unset(attack_pos);
+            new_board.opponent.bishops.unset(attack_pos);
+            new_board.opponent.queens.unset(attack_pos);
+            new_board.opponent.kings.unset(attack_pos);
         };
+
+        // Pawns
         for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
-            let target_pos = pos + 8;
-            // Pawns can move one square forwards
-            check_and_push_pawn_move(pos, target_pos);
-            // Pawns on their initial rank can optionally move two squares
-            if pos < 16 {
-                let target_pos = pos + 16;
-                check_and_push_pawn_move(pos, target_pos);
-                // No more left
-                pawn_count -= 1;
-                if pawn_count == 0 {
-                    break;
+            // Move
+            let target_pos_list = &PAWN_TARGET_POS_LISTS_2D[pos as usize];
+            for target_pos in target_pos_list {
+                let target_pos_free = !occupied_squares.get(*target_pos);
+                if target_pos_free {
+                    let mut new_board = *self;
+                    new_board.player.pawns.unset(pos);
+                    new_board.player.pawns.set(*target_pos);
+                    try_add_move(pos, *target_pos, new_board);
+                }
+            }
+
+            // Attack
+            let attack_pos_list = &PAWN_ATTACK_POS_LISTS_2D[pos as usize];
+            for attack_pos in attack_pos_list {
+                let attack_pos_occupied = opponent_occupied_squares.get(*attack_pos);
+                if attack_pos_occupied {
+                    let mut new_board = *self;
+                    new_board.player.pawns.unset(pos);
+                    new_board.player.pawns.set(*attack_pos);
+                    remove_opponent_piece(&mut new_board, *attack_pos);
+                    try_add_move(pos, *attack_pos, new_board);
                 }
             }
         }
@@ -310,14 +131,23 @@ impl Board {
             for direction in 0..4 {
                 let target_pos_list = &ROOK_TARGET_POS_LISTS_2D[pos as usize];
                 for target_pos in &target_pos_list[direction] {
+                    // Move
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
-                        let new_move = Move {
-                            from: pos,
-                            to: *target_pos,
-                        };
-                        moves.push(new_move);
+                        let mut new_board = *self;
+                        new_board.player.rooks.unset(pos);
+                        new_board.player.rooks.set(*target_pos);
+                        try_add_move(pos, *target_pos, new_board);
                     } else {
+                        let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
+                        if attack_pos_occupied {
+                            // Attack
+                            let mut new_board = *self;
+                            new_board.player.rooks.unset(pos);
+                            new_board.player.rooks.set(*target_pos);
+                            remove_opponent_piece(&mut new_board, *target_pos);
+                            try_add_move(pos, *target_pos, new_board);
+                        }
                         break;
                     }
                 }
@@ -326,15 +156,22 @@ impl Board {
 
         // Knights
         for pos in BitIter::from(self.player.knights.board).map(|x| x as u8) {
-            let target_pos_list = &KNIGHT_TARGET_POS_LISTS[pos as usize];
+            let target_pos_list = &KNIGHT_TARGET_POS_LISTS_2D[pos as usize];
             for target_pos in target_pos_list {
+                let mut new_board = *self;
+                new_board.player.knights.unset(pos);
+                new_board.player.knights.set(*target_pos);
                 let target_pos_free = !occupied_squares.get(*target_pos);
                 if target_pos_free {
-                    let new_move = Move {
-                        from: pos,
-                        to: *target_pos,
-                    };
-                    moves.push(new_move);
+                    // Move
+                    try_add_move(pos, *target_pos, new_board);
+                } else {
+                    let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
+                    if attack_pos_occupied {
+                        // Attack
+                        remove_opponent_piece(&mut new_board, *target_pos);
+                        try_add_move(pos, *target_pos, new_board);
+                    }
                 }
             }
         }
@@ -346,12 +183,21 @@ impl Board {
                 for target_pos in &target_pos_list[direction] {
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
-                        let new_move = Move {
-                            from: pos,
-                            to: *target_pos,
-                        };
-                        moves.push(new_move);
+                        // Move
+                        let mut new_board = *self;
+                        new_board.player.bishops.unset(pos);
+                        new_board.player.bishops.set(*target_pos);
+                        try_add_move(pos, *target_pos, new_board);
                     } else {
+                        let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
+                        if attack_pos_occupied {
+                            // Attack
+                            let mut new_board = *self;
+                            new_board.player.bishops.unset(pos);
+                            new_board.player.bishops.set(*target_pos);
+                            remove_opponent_piece(&mut new_board, *target_pos);
+                            try_add_move(pos, *target_pos, new_board);
+                        }
                         break;
                     }
                 }
@@ -360,17 +206,26 @@ impl Board {
 
         // Queens
         for pos in BitIter::from(self.player.queens.board).map(|x| x as u8) {
-            for direction in 0..4 {
+            for direction in 0..8 {
                 let target_pos_list = &QUEEN_TARGET_POS_LISTS_2D[pos as usize];
                 for target_pos in &target_pos_list[direction] {
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
-                        let new_move = Move {
-                            from: pos,
-                            to: *target_pos,
-                        };
-                        moves.push(new_move);
+                        // Move
+                        let mut new_board = *self;
+                        new_board.player.queens.unset(pos);
+                        new_board.player.queens.set(*target_pos);
+                        try_add_move(pos, *target_pos, new_board);
                     } else {
+                        let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
+                        if attack_pos_occupied {
+                            // Attack
+                            let mut new_board = *self;
+                            new_board.player.queens.unset(pos);
+                            new_board.player.queens.set(*target_pos);
+                            remove_opponent_piece(&mut new_board, *target_pos);
+                            try_add_move(pos, *target_pos, new_board);
+                        }
                         break;
                     }
                 }
@@ -379,15 +234,25 @@ impl Board {
 
         // Kings
         for pos in BitIter::from(self.player.kings.board).map(|x| x as u8) {
-            let target_pos_list = &KING_TARGET_POS_LISTS[pos as usize];
+            let target_pos_list = &KING_TARGET_POS_LISTS_2D[pos as usize];
             for target_pos in target_pos_list {
                 let target_pos_free = !occupied_squares.get(*target_pos);
                 if target_pos_free {
-                    let new_move = Move {
-                        from: pos,
-                        to: *target_pos,
-                    };
-                    moves.push(new_move);
+                    // Move
+                    let mut new_board = *self;
+                    new_board.player.kings.unset(pos);
+                    new_board.player.kings.set(*target_pos);
+                    try_add_move(pos, *target_pos, new_board);
+                } else {
+                    let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
+                    if attack_pos_occupied {
+                        // Attack
+                        let mut new_board = *self;
+                        new_board.player.kings.unset(pos);
+                        new_board.player.kings.set(*target_pos);
+                        remove_opponent_piece(&mut new_board, *target_pos);
+                        try_add_move(pos, *target_pos, new_board);
+                    }
                 }
             }
         }
@@ -395,55 +260,16 @@ impl Board {
         moves
     }
 
-    pub fn apply_move(&self, move_to_apply: &Move) -> Board {
-        // Need to really redo this
-        let mut new_board = *self;
-
-        for pos in BitIter::from(new_board.player.pawns.board).map(|x| x as u8) {
-            if pos == move_to_apply.from {
-                new_board.player.pawns.board &= !(1 << pos);
-                new_board.player.pawns.board |= 1 << move_to_apply.to;
-            }
-        }
-        for pos in BitIter::from(new_board.player.rooks.board).map(|x| x as u8) {
-            if pos == move_to_apply.from {
-                new_board.player.rooks.board &= !(1 << pos);
-                new_board.player.rooks.board |= 1 << move_to_apply.to;
-            }
-        }
-        for pos in BitIter::from(new_board.player.knights.board).map(|x| x as u8) {
-            if pos == move_to_apply.from {
-                new_board.player.knights.board &= !(1 << pos);
-                new_board.player.knights.board |= 1 << move_to_apply.to;
-            }
-        }
-        for pos in BitIter::from(new_board.player.bishops.board).map(|x| x as u8) {
-            if pos == move_to_apply.from {
-                new_board.player.bishops.board &= !(1 << pos);
-                new_board.player.bishops.board |= 1 << move_to_apply.to;
-            }
-        }
-        for pos in BitIter::from(new_board.player.queens.board).map(|x| x as u8) {
-            if pos == move_to_apply.from {
-                new_board.player.queens.board &= !(1 << pos);
-                new_board.player.queens.board |= 1 << move_to_apply.to;
-            }
-        }
-        for pos in BitIter::from(new_board.player.kings.board).map(|x| x as u8) {
-            if pos == move_to_apply.from {
-                new_board.player.kings.board &= !(1 << pos);
-                new_board.player.kings.board |= 1 << move_to_apply.to;
-            }
-        }
-
-        new_board
-    }
-
     pub fn flip_view(&self) -> Board {
         Board {
             player: self.opponent.flip_view(),
             opponent: self.player.flip_view(),
+            ..Board::default()
         }
+    }
+
+    fn is_king_in_check(&self) -> bool {
+        false
     }
 }
 
@@ -463,8 +289,9 @@ impl Default for Board {
             rooks: BitBoard::new((1u64) << 0 | (1u64) << 7),
             knights: BitBoard::new((1u64) << 1 | (1u64) << 6),
             bishops: BitBoard::new((1u64) << 2 | (1u64) << 5),
-            queens: BitBoard::new((1u64) << 4),
-            kings: BitBoard::new((1u64) << 3),
+            queens: BitBoard::new((1u64) << 3),
+            kings: BitBoard::new((1u64) << 4),
+            ..Player::default()
         };
         let opponent = Player {
             pawns: BitBoard::new(
@@ -480,12 +307,14 @@ impl Default for Board {
             rooks: BitBoard::new((1u64) << (63 - 0) | (1u64) << (63 - 7)),
             knights: BitBoard::new((1u64) << (63 - 1) | (1u64) << (63 - 6)),
             bishops: BitBoard::new((1u64) << (63 - 2) | (1u64) << (63 - 5)),
-            queens: BitBoard::new((1u64) << (63 - 3)),
-            kings: BitBoard::new((1u64) << (63 - 4)),
+            queens: BitBoard::new((1u64) << (63 - 4)),
+            kings: BitBoard::new((1u64) << (63 - 3)),
+            ..Player::default()
         };
         Board {
             player: player,
             opponent: opponent,
+            en_passant_available: EnPassantStatus::Unavailable,
         }
     }
 }
@@ -498,6 +327,7 @@ pub struct Square {
 pub struct Move {
     pub from: u8,
     pub to: u8,
+    pub board: Board,
 }
 
 #[cfg(test)]
