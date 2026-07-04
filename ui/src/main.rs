@@ -289,7 +289,7 @@ impl BoardWidget {
                     .find(|_move| _move.from == self.held_piece_pos.unwrap() && _move.to == target)
                 {
                     Some(_move) => {
-                        // self.board = self.board.apply_move(_move).flip_view();
+                        // self.board = _move.board.flip_view();
                         // self.legal_moves = self.board.generate_legal_moves();
                         // self.move_count += 1;
 

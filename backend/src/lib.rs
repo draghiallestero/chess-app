@@ -2,6 +2,7 @@ pub mod bitboard;
 pub mod move_sets;
 pub use bitboard::BitBoard;
 use std::{
+    cell::RefCell,
     iter::StepBy,
     ops::{Neg, Not, Range},
     sync::LazyLock,
@@ -34,11 +35,46 @@ pub struct Player {
     pub queens: BitBoard,
     pub kings: BitBoard,
     pub castling_status: CastlingStatus,
+    king_starting_pos: u8,
+}
+
+#[derive(Clone, Copy)]
+enum Piece {
+    Pawns,
+    Rooks,
+    Knights,
+    Bishops,
+    Queens,
+    Kings,
 }
 
 impl Player {
     pub fn occupied_squares(&self) -> BitBoard {
         self.pawns | self.rooks | self.knights | self.bishops | self.queens | self.kings
+    }
+
+    fn move_piece(&mut self, piece: Piece, pos: u8, target_pos: u8) {
+        let process_piece = move |piece: &mut BitBoard| {
+            piece.unset(pos);
+            piece.set(target_pos);
+        };
+        match piece {
+            Piece::Pawns => process_piece(&mut self.pawns),
+            Piece::Rooks => process_piece(&mut self.rooks),
+            Piece::Knights => process_piece(&mut self.knights),
+            Piece::Bishops => process_piece(&mut self.bishops),
+            Piece::Queens => process_piece(&mut self.queens),
+            Piece::Kings => process_piece(&mut self.kings),
+        }
+    }
+
+    fn remove_piece(&mut self, pos: u8) {
+        self.pawns.unset(pos);
+        self.rooks.unset(pos);
+        self.knights.unset(pos);
+        self.bishops.unset(pos);
+        self.queens.unset(pos);
+        self.kings.unset(pos);
     }
 
     pub fn flip_view(&self) -> Player {
@@ -88,16 +124,6 @@ impl Board {
         let opponent_occupied_squares = self.opponent.occupied_squares();
         let occupied_squares = player_occupied_squares | opponent_occupied_squares;
 
-        // Attack utilities
-        let remove_opponent_piece = |new_board: &mut Board, attack_pos: u8| {
-            new_board.opponent.pawns.unset(attack_pos);
-            new_board.opponent.rooks.unset(attack_pos);
-            new_board.opponent.knights.unset(attack_pos);
-            new_board.opponent.bishops.unset(attack_pos);
-            new_board.opponent.queens.unset(attack_pos);
-            new_board.opponent.kings.unset(attack_pos);
-        };
-
         // Pawns
         for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
             // Move
@@ -106,9 +132,10 @@ impl Board {
                 let target_pos_free = !occupied_squares.get(*target_pos);
                 if target_pos_free {
                     let mut new_board = *self;
-                    new_board.player.pawns.unset(pos);
-                    new_board.player.pawns.set(*target_pos);
+                    new_board.player.move_piece(Piece::Pawns, pos, *target_pos);
                     try_add_move(pos, *target_pos, new_board);
+                } else {
+                    break;
                 }
             }
 
@@ -118,15 +145,37 @@ impl Board {
                 let attack_pos_occupied = opponent_occupied_squares.get(*attack_pos);
                 if attack_pos_occupied {
                     let mut new_board = *self;
-                    new_board.player.pawns.unset(pos);
-                    new_board.player.pawns.set(*attack_pos);
-                    remove_opponent_piece(&mut new_board, *attack_pos);
+                    new_board.player.move_piece(Piece::Pawns, pos, *attack_pos);
+                    new_board.opponent.remove_piece(*attack_pos);
                     try_add_move(pos, *attack_pos, new_board);
                 }
             }
         }
 
         // Rooks
+        let update_castling_status_when_rook_moves = |pos, new_board: &mut Board| {
+            if pos == 0 {
+                match new_board.player.castling_status {
+                    CastlingStatus::BothAvailable => {
+                        new_board.player.castling_status = CastlingStatus::KingSideAvailable
+                    }
+                    CastlingStatus::QueenSideAvailable => {
+                        new_board.player.castling_status = CastlingStatus::Unavailable
+                    }
+                    _ => (),
+                }
+            } else if pos == 7 {
+                match new_board.player.castling_status {
+                    CastlingStatus::BothAvailable => {
+                        new_board.player.castling_status = CastlingStatus::QueenSideAvailable
+                    }
+                    CastlingStatus::KingSideAvailable => {
+                        new_board.player.castling_status = CastlingStatus::Unavailable
+                    }
+                    _ => (),
+                }
+            }
+        };
         for pos in BitIter::from(self.player.rooks.board).map(|x| x as u8) {
             for direction in 0..4 {
                 let target_pos_list = &ROOK_TARGET_POS_LISTS_2D[pos as usize];
@@ -135,17 +184,17 @@ impl Board {
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
                         let mut new_board = *self;
-                        new_board.player.rooks.unset(pos);
-                        new_board.player.rooks.set(*target_pos);
+                        new_board.player.move_piece(Piece::Rooks, pos, *target_pos);
+                        update_castling_status_when_rook_moves(pos, &mut new_board);
                         try_add_move(pos, *target_pos, new_board);
                     } else {
                         let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                         if attack_pos_occupied {
                             // Attack
                             let mut new_board = *self;
-                            new_board.player.rooks.unset(pos);
-                            new_board.player.rooks.set(*target_pos);
-                            remove_opponent_piece(&mut new_board, *target_pos);
+                            new_board.player.move_piece(Piece::Rooks, pos, *target_pos);
+                            new_board.opponent.remove_piece(*target_pos);
+                            update_castling_status_when_rook_moves(pos, &mut new_board);
                             try_add_move(pos, *target_pos, new_board);
                         }
                         break;
@@ -159,8 +208,9 @@ impl Board {
             let target_pos_list = &KNIGHT_TARGET_POS_LISTS_2D[pos as usize];
             for target_pos in target_pos_list {
                 let mut new_board = *self;
-                new_board.player.knights.unset(pos);
-                new_board.player.knights.set(*target_pos);
+                new_board
+                    .player
+                    .move_piece(Piece::Knights, pos, *target_pos);
                 let target_pos_free = !occupied_squares.get(*target_pos);
                 if target_pos_free {
                     // Move
@@ -169,7 +219,7 @@ impl Board {
                     let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                     if attack_pos_occupied {
                         // Attack
-                        remove_opponent_piece(&mut new_board, *target_pos);
+                        new_board.opponent.remove_piece(*target_pos);
                         try_add_move(pos, *target_pos, new_board);
                     }
                 }
@@ -185,17 +235,19 @@ impl Board {
                     if target_pos_free {
                         // Move
                         let mut new_board = *self;
-                        new_board.player.bishops.unset(pos);
-                        new_board.player.bishops.set(*target_pos);
+                        new_board
+                            .player
+                            .move_piece(Piece::Bishops, pos, *target_pos);
                         try_add_move(pos, *target_pos, new_board);
                     } else {
                         let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                         if attack_pos_occupied {
                             // Attack
                             let mut new_board = *self;
-                            new_board.player.bishops.unset(pos);
-                            new_board.player.bishops.set(*target_pos);
-                            remove_opponent_piece(&mut new_board, *target_pos);
+                            new_board
+                                .player
+                                .move_piece(Piece::Bishops, pos, *target_pos);
+                            new_board.opponent.remove_piece(*target_pos);
                             try_add_move(pos, *target_pos, new_board);
                         }
                         break;
@@ -213,17 +265,15 @@ impl Board {
                     if target_pos_free {
                         // Move
                         let mut new_board = *self;
-                        new_board.player.queens.unset(pos);
-                        new_board.player.queens.set(*target_pos);
+                        new_board.player.move_piece(Piece::Queens, pos, *target_pos);
                         try_add_move(pos, *target_pos, new_board);
                     } else {
                         let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                         if attack_pos_occupied {
                             // Attack
                             let mut new_board = *self;
-                            new_board.player.queens.unset(pos);
-                            new_board.player.queens.set(*target_pos);
-                            remove_opponent_piece(&mut new_board, *target_pos);
+                            new_board.player.move_piece(Piece::Queens, pos, *target_pos);
+                            new_board.opponent.remove_piece(*target_pos);
                             try_add_move(pos, *target_pos, new_board);
                         }
                         break;
@@ -233,6 +283,12 @@ impl Board {
         }
 
         // Kings
+        let update_castling_status_when_king_moves =
+            |pos, king_starting_pos, new_board: &mut Board| {
+                if pos == king_starting_pos {
+                    new_board.player.castling_status = CastlingStatus::Unavailable
+                }
+            };
         for pos in BitIter::from(self.player.kings.board).map(|x| x as u8) {
             let target_pos_list = &KING_TARGET_POS_LISTS_2D[pos as usize];
             for target_pos in target_pos_list {
@@ -240,20 +296,65 @@ impl Board {
                 if target_pos_free {
                     // Move
                     let mut new_board = *self;
-                    new_board.player.kings.unset(pos);
-                    new_board.player.kings.set(*target_pos);
+                    new_board.player.move_piece(Piece::Kings, pos, *target_pos);
+                    update_castling_status_when_king_moves(
+                        pos,
+                        self.player.king_starting_pos,
+                        &mut new_board,
+                    );
                     try_add_move(pos, *target_pos, new_board);
                 } else {
                     let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                     if attack_pos_occupied {
                         // Attack
                         let mut new_board = *self;
-                        new_board.player.kings.unset(pos);
-                        new_board.player.kings.set(*target_pos);
-                        remove_opponent_piece(&mut new_board, *target_pos);
+                        new_board.player.move_piece(Piece::Kings, pos, *target_pos);
+                        new_board.opponent.remove_piece(*target_pos);
+                        update_castling_status_when_king_moves(
+                            pos,
+                            self.player.king_starting_pos,
+                            &mut new_board,
+                        );
                         try_add_move(pos, *target_pos, new_board);
                     }
                 }
+            }
+
+            // Castling
+            let process_castling = RefCell::new(|neighbor_pos, target_pos, rook_pos| {
+                let rook_target_pos = neighbor_pos;
+                let neighbor_free = !occupied_squares.get(neighbor_pos);
+                let target_pos_free = !occupied_squares.get(target_pos);
+                if neighbor_free && target_pos_free {
+                    let mut new_board = *self;
+                    new_board.player.move_piece(Piece::Kings, pos, target_pos);
+                    new_board
+                        .player
+                        .move_piece(Piece::Rooks, rook_pos, rook_target_pos);
+                    new_board.player.castling_status = CastlingStatus::Unavailable;
+                    try_add_move(pos, target_pos, new_board);
+                }
+            });
+            let process_kingside_castling = || {
+                let file = pos;
+                let neighbor_pos = file + 1;
+                let target_pos = file + 2;
+                let rook_pos = 7;
+                (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
+            };
+            let process_queenside_castling = || {
+                let file = pos;
+                let neighbor_pos = file - 1;
+                let target_pos = file - 2;
+                let rook_pos = 0;
+                (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
+            };
+            match self.player.castling_status {
+                CastlingStatus::BothAvailable => {
+                    process_kingside_castling();
+                    process_queenside_castling();
+                }
+                _ => (),
             }
         }
 
@@ -291,6 +392,7 @@ impl Default for Board {
             bishops: BitBoard::new((1u64) << 2 | (1u64) << 5),
             queens: BitBoard::new((1u64) << 3),
             kings: BitBoard::new((1u64) << 4),
+            king_starting_pos: 4,
             ..Player::default()
         };
         let opponent = Player {
@@ -309,6 +411,7 @@ impl Default for Board {
             bishops: BitBoard::new((1u64) << (63 - 2) | (1u64) << (63 - 5)),
             queens: BitBoard::new((1u64) << (63 - 4)),
             kings: BitBoard::new((1u64) << (63 - 3)),
+            king_starting_pos: 3,
             ..Player::default()
         };
         Board {
