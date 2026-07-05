@@ -289,13 +289,13 @@ impl BoardWidget {
                     .find(|_move| _move.from == self.held_piece_pos.unwrap() && _move.to == target)
                 {
                     Some(_move) => {
-                        // self.board = _move.board.flip_view();
-                        // self.legal_moves = self.board.generate_legal_moves();
-                        // self.move_count += 1;
-
-                        self.board = _move.board;
+                        self.board = _move.board.flip_view();
                         self.legal_moves = self.board.generate_legal_moves();
-                        self.move_count += 2;
+                        self.move_count += 1;
+
+                        // self.board = _move.board.clone();
+                        // self.legal_moves = self.board.generate_legal_moves();
+                        // self.move_count += 2;
                     }
                     None => (),
                 };

@@ -2,6 +2,13 @@ use std::{sync::LazyLock, thread::current};
 
 use arrayvec::ArrayVec;
 
+pub fn from_pos(pos: u8) -> (u8, u8) {
+    (pos / 8, pos % 8)
+}
+pub fn to_pos(rank: u8, file: u8) -> u8 {
+    8 * rank + file
+}
+
 fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
     target_pos_lists_2d: &mut [[ArrayVec<u8, 7>; DIRECTIONS]; 64],
     cardinals: bool,

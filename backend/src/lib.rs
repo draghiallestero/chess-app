@@ -14,7 +14,7 @@ use bit_iter::BitIter;
 use crate::move_sets::{
     BISHOP_TARGET_POS_LISTS_2D, KING_TARGET_POS_LISTS_2D, KNIGHT_TARGET_POS_LISTS_2D,
     PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D,
-    ROOK_TARGET_POS_LISTS_2D,
+    ROOK_TARGET_POS_LISTS_2D, from_pos, to_pos,
 };
 
 #[derive(Default, Clone, Copy)]
@@ -26,18 +26,6 @@ enum CastlingStatus {
     Unavailable,
 }
 
-#[derive(Default, Clone, Copy)]
-pub struct Player {
-    pub pawns: BitBoard,
-    pub rooks: BitBoard,
-    pub knights: BitBoard,
-    pub bishops: BitBoard,
-    pub queens: BitBoard,
-    pub kings: BitBoard,
-    pub castling_status: CastlingStatus,
-    king_starting_pos: u8,
-}
-
 #[derive(Clone, Copy)]
 enum Piece {
     Pawns,
@@ -46,6 +34,18 @@ enum Piece {
     Bishops,
     Queens,
     Kings,
+}
+
+#[derive(Default, Clone, Copy)]
+pub struct Player {
+    pub pawns: BitBoard,
+    pub rooks: BitBoard,
+    pub knights: BitBoard,
+    pub bishops: BitBoard,
+    pub queens: BitBoard,
+    pub kings: BitBoard,
+    castling_status: CastlingStatus,
+    king_starting_pos: u8,
 }
 
 impl Player {
@@ -91,18 +91,11 @@ impl Player {
 }
 
 #[derive(Clone, Copy)]
-enum EnPassantStatus {
-    Unavailable,
-    Available,
-    Consumed,
-}
-
-#[derive(Clone, Copy)]
 pub struct Board {
     pub player: Player,
     pub opponent: Player,
 
-    en_passant_available: EnPassantStatus,
+    en_passant_pos: Option<u8>,
 }
 
 impl Board {
@@ -126,13 +119,19 @@ impl Board {
 
         // Pawns
         for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
+            let (rank, file) = from_pos(pos);
+
             // Move
             let target_pos_list = &PAWN_TARGET_POS_LISTS_2D[pos as usize];
-            for target_pos in target_pos_list {
+            for (i, target_pos) in target_pos_list.iter().enumerate() {
                 let target_pos_free = !occupied_squares.get(*target_pos);
                 if target_pos_free {
-                    let mut new_board = *self;
+                    let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Pawns, pos, *target_pos);
+                    // En passant
+                    if i == 1 {
+                        new_board.en_passant_pos = Some(*target_pos);
+                    }
                     try_add_move(pos, *target_pos, new_board);
                 } else {
                     break;
@@ -144,10 +143,29 @@ impl Board {
             for attack_pos in attack_pos_list {
                 let attack_pos_occupied = opponent_occupied_squares.get(*attack_pos);
                 if attack_pos_occupied {
-                    let mut new_board = *self;
+                    let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Pawns, pos, *attack_pos);
                     new_board.opponent.remove_piece(*attack_pos);
                     try_add_move(pos, *attack_pos, new_board);
+                }
+            }
+
+            // Attack en passant
+            if rank == 4 {
+                match self.en_passant_pos {
+                    Some(en_passant_pos) => {
+                        // The other player's rank is from their point-of-view, so adjust
+                        let en_passant_pos = 63 - en_passant_pos;
+                        let (en_passant_rank, en_passant_file) = from_pos(en_passant_pos);
+                        let attack_pos = to_pos(en_passant_rank + 1, en_passant_file);
+                        if file.wrapping_sub(1) == en_passant_file || file + 1 == en_passant_file {
+                            let mut new_board = self.new_move_board();
+                            new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
+                            new_board.opponent.remove_piece(en_passant_pos);
+                            try_add_move(pos, attack_pos, new_board);
+                        }
+                    }
+                    None => (),
                 }
             }
         }
@@ -183,7 +201,7 @@ impl Board {
                     // Move
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
-                        let mut new_board = *self;
+                        let mut new_board = self.new_move_board();
                         new_board.player.move_piece(Piece::Rooks, pos, *target_pos);
                         update_castling_status_when_rook_moves(pos, &mut new_board);
                         try_add_move(pos, *target_pos, new_board);
@@ -191,7 +209,7 @@ impl Board {
                         let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                         if attack_pos_occupied {
                             // Attack
-                            let mut new_board = *self;
+                            let mut new_board = self.new_move_board();
                             new_board.player.move_piece(Piece::Rooks, pos, *target_pos);
                             new_board.opponent.remove_piece(*target_pos);
                             update_castling_status_when_rook_moves(pos, &mut new_board);
@@ -207,7 +225,7 @@ impl Board {
         for pos in BitIter::from(self.player.knights.board).map(|x| x as u8) {
             let target_pos_list = &KNIGHT_TARGET_POS_LISTS_2D[pos as usize];
             for target_pos in target_pos_list {
-                let mut new_board = *self;
+                let mut new_board = self.new_move_board();
                 new_board
                     .player
                     .move_piece(Piece::Knights, pos, *target_pos);
@@ -234,7 +252,7 @@ impl Board {
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
                         // Move
-                        let mut new_board = *self;
+                        let mut new_board = self.new_move_board();
                         new_board
                             .player
                             .move_piece(Piece::Bishops, pos, *target_pos);
@@ -243,7 +261,7 @@ impl Board {
                         let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                         if attack_pos_occupied {
                             // Attack
-                            let mut new_board = *self;
+                            let mut new_board = self.new_move_board();
                             new_board
                                 .player
                                 .move_piece(Piece::Bishops, pos, *target_pos);
@@ -264,14 +282,14 @@ impl Board {
                     let target_pos_free = !occupied_squares.get(*target_pos);
                     if target_pos_free {
                         // Move
-                        let mut new_board = *self;
+                        let mut new_board = self.new_move_board();
                         new_board.player.move_piece(Piece::Queens, pos, *target_pos);
                         try_add_move(pos, *target_pos, new_board);
                     } else {
                         let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                         if attack_pos_occupied {
                             // Attack
-                            let mut new_board = *self;
+                            let mut new_board = self.new_move_board();
                             new_board.player.move_piece(Piece::Queens, pos, *target_pos);
                             new_board.opponent.remove_piece(*target_pos);
                             try_add_move(pos, *target_pos, new_board);
@@ -295,7 +313,7 @@ impl Board {
                 let target_pos_free = !occupied_squares.get(*target_pos);
                 if target_pos_free {
                     // Move
-                    let mut new_board = *self;
+                    let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Kings, pos, *target_pos);
                     update_castling_status_when_king_moves(
                         pos,
@@ -307,7 +325,7 @@ impl Board {
                     let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
                     if attack_pos_occupied {
                         // Attack
-                        let mut new_board = *self;
+                        let mut new_board = self.new_move_board();
                         new_board.player.move_piece(Piece::Kings, pos, *target_pos);
                         new_board.opponent.remove_piece(*target_pos);
                         update_castling_status_when_king_moves(
@@ -326,7 +344,7 @@ impl Board {
                 let neighbor_free = !occupied_squares.get(neighbor_pos);
                 let target_pos_free = !occupied_squares.get(target_pos);
                 if neighbor_free && target_pos_free {
-                    let mut new_board = *self;
+                    let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Kings, pos, target_pos);
                     new_board
                         .player
@@ -361,11 +379,19 @@ impl Board {
         moves
     }
 
+    fn new_move_board(&self) -> Board {
+        // For the next move, always reset some members
+        Board {
+            en_passant_pos: None,
+            ..*self
+        }
+    }
+
     pub fn flip_view(&self) -> Board {
         Board {
             player: self.opponent.flip_view(),
             opponent: self.player.flip_view(),
-            ..Board::default()
+            ..*self
         }
     }
 
@@ -417,7 +443,7 @@ impl Default for Board {
         Board {
             player: player,
             opponent: opponent,
-            en_passant_available: EnPassantStatus::Unavailable,
+            en_passant_pos: None,
         }
     }
 }
