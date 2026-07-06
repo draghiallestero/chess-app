@@ -38,7 +38,6 @@ struct BoardWidget {
     board: Board,
     held_piece_pos: Option<u8>,
     mouse_pos: Point,
-    move_count: i32,
     legal_moves: Vec<Move>,
 }
 
@@ -50,7 +49,6 @@ impl Default for BoardWidget {
             board: board,
             held_piece_pos: None,
             mouse_pos: Point::default(),
-            move_count: 0,
             legal_moves: legal_moves,
         }
     }
@@ -102,8 +100,8 @@ impl BoardWidget {
         let text_size = 100;
 
         // Determine player and opponent text maps
-        let player_piece_text_map = PieceTextMap::new(self.move_count);
-        let opponent_piece_text_map = PieceTextMap::new(self.move_count + 1);
+        let player_piece_text_map = PieceTextMap::new(self.board.halfmove_count);
+        let opponent_piece_text_map = PieceTextMap::new(self.board.halfmove_count + 1);
 
         // Which squares the held piece can be moved to
         let legal_move_targets = match self.held_piece_pos {
@@ -291,11 +289,11 @@ impl BoardWidget {
                     Some(_move) => {
                         self.board = _move.board.flip_view();
                         self.legal_moves = self.board.generate_legal_moves();
-                        self.move_count += 1;
+                        self.board.halfmove_count += 1;
 
                         // self.board = _move.board.clone();
                         // self.legal_moves = self.board.generate_legal_moves();
-                        // self.move_count += 2;
+                        // self.halfmove_count += 2;
                     }
                     None => (),
                 };

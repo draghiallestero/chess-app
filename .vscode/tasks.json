@@ -45,6 +45,26 @@
             "dependsOn": [
                 "Format"
             ]
+        },
+        {
+            "label": "Build Tests",
+            "type": "cargo",
+            "command": "test",
+            "problemMatcher": [
+                "$rustc"
+            ],
+            "group": {
+                "kind": "build",
+            },
+            "options": {
+                "cwd": "${workspaceFolder}/backend"
+            },
+            "args": [
+                "--no-run"
+            ],
+            "dependsOn": [
+                "Format"
+            ]
         }
     ]
 }

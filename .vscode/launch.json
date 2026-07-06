@@ -8,10 +8,6 @@
                 "args": [
                     "build"
                 ],
-                "filter": {
-                    "name": "ui",
-                    "kind": "bin"
-                },
                 "cwd": "${workspaceFolder}/ui"
             },
             "args": [],
@@ -26,14 +22,23 @@
                     "build",
                     "--release"
                 ],
-                "filter": {
-                    "name": "ui",
-                    "kind": "bin"
-                },
                 "cwd": "${workspaceFolder}/ui"
             },
             "args": [],
             "preLaunchTask": "Build UI Release"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Run Tests",
+            "cargo": {
+                "args": [
+                    "test"
+                ],
+                "cwd": "${workspaceFolder}/backend"
+            },
+            "args": [],
+            "preLaunchTask": "Build Tests"
         }
     ]
 }
