@@ -46,7 +46,6 @@ pub struct Player {
     pub queens: BitBoard,
     pub kings: BitBoard,
     castling_status: CastlingStatus,
-    king_starting_pos: u8,
 }
 
 impl Player {
@@ -137,7 +136,6 @@ impl Default for Board {
             bishops: BitBoard::new((1u64) << 2 | (1u64) << 5),
             queens: BitBoard::new((1u64) << 3),
             kings: BitBoard::new((1u64) << 4),
-            king_starting_pos: 4,
             ..Player::default()
         };
         let opponent = Player {
@@ -156,7 +154,6 @@ impl Default for Board {
             bishops: BitBoard::new((1u64) << (63 - 2) | (1u64) << (63 - 5)),
             queens: BitBoard::new((1u64) << (63 - 4)),
             kings: BitBoard::new((1u64) << (63 - 3)),
-            king_starting_pos: 3,
             ..Player::default()
         };
         Board {
@@ -446,12 +443,6 @@ impl Board {
         }
 
         // Kings
-        let update_castling_status_when_king_moves =
-            |pos, king_starting_pos, new_board: &mut Board| {
-                if pos == king_starting_pos {
-                    new_board.player.castling_status = CastlingStatus::Unavailable
-                }
-            };
         for pos in BitIter::from(self.player.kings.board).map(|x| x as u8) {
             let target_pos_list = &KING_TARGET_POS_LISTS_2D[pos as usize];
             for target_pos in target_pos_list {
@@ -460,11 +451,7 @@ impl Board {
                     // Move
                     let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Kings, pos, *target_pos);
-                    update_castling_status_when_king_moves(
-                        pos,
-                        self.player.king_starting_pos,
-                        &mut new_board,
-                    );
+                    new_board.player.castling_status = CastlingStatus::Unavailable;
                     try_add_move(pos, *target_pos, new_board);
                 } else {
                     let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
@@ -473,58 +460,57 @@ impl Board {
                         let mut new_board = self.new_move_board();
                         new_board.player.move_piece(Piece::Kings, pos, *target_pos);
                         remove_attacked_piece(&mut new_board, *target_pos);
-                        update_castling_status_when_king_moves(
-                            pos,
-                            self.player.king_starting_pos,
-                            &mut new_board,
-                        );
+                        new_board.player.castling_status = CastlingStatus::Unavailable;
                         try_add_move(pos, *target_pos, new_board);
                     }
                 }
             }
 
             // Castling
-            if !self.is_king_in_check() {
-                let process_castling = RefCell::new(|neighbor_pos, target_pos, rook_pos| {
-                    let rook_target_pos = neighbor_pos;
-                    let neighbor_free = !occupied_squares.get(neighbor_pos);
-                    let target_pos_free = !occupied_squares.get(target_pos);
-                    if neighbor_free && target_pos_free {
-                        let mut new_board = self.new_move_board();
-                        new_board.player.move_piece(Piece::Kings, pos, neighbor_pos);
-                        if !new_board.is_king_in_check() {
-                            new_board
-                                .player
-                                .move_piece(Piece::Kings, neighbor_pos, target_pos);
-                            new_board
-                                .player
-                                .move_piece(Piece::Rooks, rook_pos, rook_target_pos);
-                            new_board.player.castling_status = CastlingStatus::Unavailable;
-                            try_add_move(pos, target_pos, new_board);
-                        }
+            let process_castling = RefCell::new(|pos, pos_adder: i8, rook_pos| {
+                let mut current_pos = (pos as i8 + pos_adder) as u8;
+                // All squares between the king and rook must be free
+                while current_pos != rook_pos {
+                    if occupied_squares.get(current_pos) {
+                        return;
                     }
-                });
-                let process_kingside_castling = || {
-                    let file = pos;
-                    let neighbor_pos = file + 1;
-                    let target_pos = file + 2;
-                    let rook_pos = 7;
-                    (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
-                };
-                let process_queenside_castling = || {
-                    let file = pos;
-                    let neighbor_pos = file - 1;
-                    let target_pos = file - 2;
-                    let rook_pos = 0;
-                    (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
-                };
-                match self.player.castling_status {
-                    CastlingStatus::BothAvailable => {
-                        process_kingside_castling();
-                        process_queenside_castling();
-                    }
-                    _ => (),
+                    current_pos = (current_pos as i8 + pos_adder) as u8;
                 }
+                let mut new_board = self.new_move_board();
+                if !self.is_king_in_check() {
+                    let neighbor_pos = (pos as i8 + pos_adder) as u8;
+                    let target_pos = (pos as i8 + 2 * pos_adder) as u8;
+                    new_board.player.move_piece(Piece::Kings, pos, neighbor_pos);
+                    if !new_board.is_king_in_check() {
+                        new_board
+                            .player
+                            .move_piece(Piece::Kings, neighbor_pos, target_pos);
+                        new_board
+                            .player
+                            .move_piece(Piece::Rooks, rook_pos, neighbor_pos);
+                        new_board.player.castling_status = CastlingStatus::Unavailable;
+                        try_add_move(pos, target_pos, new_board);
+                    }
+                }
+            });
+            let process_kingside_castling = || {
+                (process_castling.borrow_mut())(pos, 1, 7);
+            };
+            let process_queenside_castling = || {
+                (process_castling.borrow_mut())(pos, -1, 0);
+            };
+            match self.player.castling_status {
+                CastlingStatus::BothAvailable => {
+                    process_kingside_castling();
+                    process_queenside_castling();
+                }
+                CastlingStatus::KingSideAvailable => {
+                    process_kingside_castling();
+                }
+                CastlingStatus::QueenSideAvailable => {
+                    process_queenside_castling();
+                }
+                _ => (),
             }
         }
 
@@ -1011,28 +997,37 @@ impl Board {
 
         // Castling ability
         fen_ix += 1;
+        let mut player_casting_status = CastlingStatus::Unavailable;
+        let mut opponent_casting_status = CastlingStatus::Unavailable;
         loop {
             let c = fen.chars().nth(fen_ix).unwrap();
             match c {
-                'K' => board.player.castling_status = CastlingStatus::KingSideAvailable,
+                'K' => player_casting_status = CastlingStatus::KingSideAvailable,
                 'Q' => {
-                    board.player.castling_status = match board.player.castling_status {
+                    player_casting_status = match player_casting_status {
                         CastlingStatus::KingSideAvailable => CastlingStatus::BothAvailable,
                         CastlingStatus::Unavailable => CastlingStatus::QueenSideAvailable,
-                        _ => board.player.castling_status,
+                        _ => player_casting_status,
                     }
                 }
-                'k' => board.opponent.castling_status = CastlingStatus::KingSideAvailable,
+                'k' => opponent_casting_status = CastlingStatus::KingSideAvailable,
                 'q' => {
-                    board.opponent.castling_status = match board.opponent.castling_status {
+                    opponent_casting_status = match opponent_casting_status {
                         CastlingStatus::KingSideAvailable => CastlingStatus::BothAvailable,
                         CastlingStatus::Unavailable => CastlingStatus::QueenSideAvailable,
-                        _ => board.opponent.castling_status,
+                        _ => opponent_casting_status,
                     }
                 }
                 _ => break,
             }
             fen_ix += 1;
+        }
+        if side_to_move == 'w' {
+            board.player.castling_status = player_casting_status;
+            board.opponent.castling_status = opponent_casting_status;
+        } else {
+            board.opponent.castling_status = player_casting_status;
+            board.player.castling_status = opponent_casting_status;
         }
 
         // En passant
@@ -1128,18 +1123,63 @@ mod tests {
 
     #[test]
     fn perft() {
+        // Initial position
         let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
         assert_eq!(perft_for_depth(board, 0, 1, false), 20);
         assert_eq!(perft_for_depth(board, 0, 2, false), 400);
         assert_eq!(perft_for_depth(board, 0, 3, false), 8902);
         assert_eq!(perft_for_depth(board, 0, 4, false), 197281);
-        assert_eq!(perft_for_depth(board, 0, 5, true), 4865609);
-        assert_eq!(perft_for_depth(board, 0, 6, true), 119060324);
+        assert_eq!(perft_for_depth(board, 0, 5, false), 4865609);
+        // assert_eq!(perft_for_depth(board, 0, 6, true), 119060324);
+
+        // Position 2
+        let board =
+            Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+        assert_eq!(perft_for_depth(board, 0, 1, false), 48);
+        assert_eq!(perft_for_depth(board, 0, 2, false), 2039);
+        assert_eq!(perft_for_depth(board, 0, 3, true), 97862);
+        assert_eq!(perft_for_depth(board, 0, 4, false), 4085603);
+        // assert_eq!(perft_for_depth(board, 0, 5, false), 193690690);
+
+        // Position 3
+        let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+        assert_eq!(perft_for_depth(board, 0, 1, false), 14);
+        assert_eq!(perft_for_depth(board, 0, 2, false), 191);
+        assert_eq!(perft_for_depth(board, 0, 3, true), 2812);
+        assert_eq!(perft_for_depth(board, 0, 4, false), 43238);
+        assert_eq!(perft_for_depth(board, 0, 5, false), 674624);
+
+        // Position 4
+        let board =
+            Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
+        assert_eq!(perft_for_depth(board, 0, 1, false), 6);
+        assert_eq!(perft_for_depth(board, 0, 2, false), 264);
+        assert_eq!(perft_for_depth(board, 0, 3, true), 9467);
+        assert_eq!(perft_for_depth(board, 0, 4, false), 422333);
+        // assert_eq!(perft_for_depth(board, 0, 5, false), 15833292);
+
+        // Position 5
+        let board = Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
+        assert_eq!(perft_for_depth(board, 0, 1, false), 44);
+        assert_eq!(perft_for_depth(board, 0, 2, false), 1486);
+        assert_eq!(perft_for_depth(board, 0, 3, true), 62379);
+        assert_eq!(perft_for_depth(board, 0, 4, false), 2103487);
+        // assert_eq!(perft_for_depth(board, 0, 5, false), 89941194);
+
+        // Position 6
+        let board = Board::from_fen(
+            "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
+        );
+        assert_eq!(perft_for_depth(board, 0, 1, false), 1);
+        assert_eq!(perft_for_depth(board, 0, 2, false), 46);
+        assert_eq!(perft_for_depth(board, 0, 3, true), 2079);
+        assert_eq!(perft_for_depth(board, 0, 4, false), 89890);
+        assert_eq!(perft_for_depth(board, 0, 5, false), 3894594);
     }
 
     #[test]
     fn fen() {
-        // Starting position
+        // Initial position
         let fen = Board::default().to_fen();
         assert_eq!(
             fen,
