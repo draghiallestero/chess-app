@@ -340,40 +340,47 @@ impl Board {
             }
 
             // Castling
-            let process_castling = RefCell::new(|neighbor_pos, target_pos, rook_pos| {
-                let rook_target_pos = neighbor_pos;
-                let neighbor_free = !occupied_squares.get(neighbor_pos);
-                let target_pos_free = !occupied_squares.get(target_pos);
-                if neighbor_free && target_pos_free {
-                    let mut new_board = self.new_move_board();
-                    new_board.player.move_piece(Piece::Kings, pos, target_pos);
-                    new_board
-                        .player
-                        .move_piece(Piece::Rooks, rook_pos, rook_target_pos);
-                    new_board.player.castling_status = CastlingStatus::Unavailable;
-                    try_add_move(pos, target_pos, new_board);
+            if !self.is_king_in_check() {
+                let process_castling = RefCell::new(|neighbor_pos, target_pos, rook_pos| {
+                    let rook_target_pos = neighbor_pos;
+                    let neighbor_free = !occupied_squares.get(neighbor_pos);
+                    let target_pos_free = !occupied_squares.get(target_pos);
+                    if neighbor_free && target_pos_free {
+                        let mut new_board = self.new_move_board();
+                        new_board.player.move_piece(Piece::Kings, pos, neighbor_pos);
+                        if !new_board.is_king_in_check() {
+                            new_board
+                                .player
+                                .move_piece(Piece::Kings, neighbor_pos, target_pos);
+                            new_board
+                                .player
+                                .move_piece(Piece::Rooks, rook_pos, rook_target_pos);
+                            new_board.player.castling_status = CastlingStatus::Unavailable;
+                            try_add_move(pos, target_pos, new_board);
+                        }
+                    }
+                });
+                let process_kingside_castling = || {
+                    let file = pos;
+                    let neighbor_pos = file + 1;
+                    let target_pos = file + 2;
+                    let rook_pos = 7;
+                    (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
+                };
+                let process_queenside_castling = || {
+                    let file = pos;
+                    let neighbor_pos = file - 1;
+                    let target_pos = file - 2;
+                    let rook_pos = 0;
+                    (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
+                };
+                match self.player.castling_status {
+                    CastlingStatus::BothAvailable => {
+                        process_kingside_castling();
+                        process_queenside_castling();
+                    }
+                    _ => (),
                 }
-            });
-            let process_kingside_castling = || {
-                let file = pos;
-                let neighbor_pos = file + 1;
-                let target_pos = file + 2;
-                let rook_pos = 7;
-                (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
-            };
-            let process_queenside_castling = || {
-                let file = pos;
-                let neighbor_pos = file - 1;
-                let target_pos = file - 2;
-                let rook_pos = 0;
-                (process_castling.borrow_mut())(neighbor_pos, target_pos, rook_pos);
-            };
-            match self.player.castling_status {
-                CastlingStatus::BothAvailable => {
-                    process_kingside_castling();
-                    process_queenside_castling();
-                }
-                _ => (),
             }
         }
 
