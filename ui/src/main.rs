@@ -289,11 +289,10 @@ impl BoardWidget {
                     Some(_move) => {
                         self.board = _move.board.flip_view();
                         self.legal_moves = self.board.generate_legal_moves();
-                        self.board.halfmove_count += 1;
 
                         // self.board = _move.board.clone();
                         // self.legal_moves = self.board.generate_legal_moves();
-                        // self.halfmove_count += 2;
+                        // self.halfmove_count += 1;
                     }
                     None => (),
                 };

@@ -116,7 +116,7 @@ pub struct Board {
 
     pub partial_halfmove_count: i32,
     pub halfmove_count: i32,
-    en_passant_pos: Option<u8>,
+    en_passant_target_pos: Option<u8>,
 }
 
 impl Default for Board {
@@ -164,7 +164,7 @@ impl Default for Board {
             opponent: opponent,
             partial_halfmove_count: 0,
             halfmove_count: 0,
-            en_passant_pos: None,
+            en_passant_target_pos: None,
         }
     }
 }
@@ -176,7 +176,7 @@ impl Board {
             opponent: Player::default(),
             partial_halfmove_count: 0,
             halfmove_count: 0,
-            en_passant_pos: None,
+            en_passant_target_pos: None,
         }
     }
 
@@ -233,7 +233,8 @@ impl Board {
                     new_board.player.move_piece(Piece::Pawns, pos, *target_pos);
                     // En passant
                     if rank == 1 {
-                        new_board.en_passant_pos = Some(*target_pos);
+                        // En passant is stored as if from the other point-of-view
+                        new_board.en_passant_target_pos = Some(63 - to_pos(rank + 1, file));
                     }
                     // Promotion
                     if rank == 6 {
@@ -273,19 +274,19 @@ impl Board {
                 }
             }
 
-            // Attack en passant
+            // Attack En passant
             if rank == 4 {
-                match self.en_passant_pos {
-                    Some(en_passant_pos) => {
-                        // The other player's rank is from their point-of-view, so adjust
-                        let en_passant_pos = 63 - en_passant_pos;
-                        let (en_passant_rank, en_passant_file) = from_pos(en_passant_pos);
-                        let attack_pos = to_pos(en_passant_rank + 1, en_passant_file);
+                match self.en_passant_target_pos {
+                    Some(en_passant_target_pos) => {
+                        let (en_passant_rank, en_passant_file) = from_pos(en_passant_target_pos);
+                        let attack_pos = to_pos(en_passant_rank - 1, en_passant_file);
                         if file.wrapping_sub(1) == en_passant_file || file + 1 == en_passant_file {
                             let mut new_board = self.new_move_board();
-                            new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
-                            new_board.opponent.remove_any_piece(en_passant_pos);
-                            try_add_move(pos, attack_pos, new_board);
+                            new_board
+                                .player
+                                .move_piece(Piece::Pawns, pos, en_passant_target_pos);
+                            new_board.opponent.remove_any_piece(attack_pos);
+                            try_add_move(pos, en_passant_target_pos, new_board);
                         }
                     }
                     None => (),
@@ -513,7 +514,8 @@ impl Board {
         // For the next move, always reset some members
         Board {
             partial_halfmove_count: self.partial_halfmove_count + 1,
-            en_passant_pos: None,
+            halfmove_count: self.halfmove_count + 1,
+            en_passant_target_pos: None,
             ..*self
         }
     }
@@ -871,7 +873,7 @@ impl Board {
 
         // En passant
         fen.push(' ');
-        match board.en_passant_pos {
+        match board.en_passant_target_pos {
             Some(pos) => fen.push_str(to_chars(pos)),
             None => fen.push('-'),
         }
@@ -1003,7 +1005,7 @@ impl Board {
         let c = fen.chars().nth(fen_ix).unwrap();
         if c != '-' {
             let chars = &fen[fen_ix..fen_ix + 2];
-            board.en_passant_pos = Some(from_chars(chars));
+            board.en_passant_target_pos = Some(from_chars(chars));
             fen_ix += 1;
         }
         fen_ix += 1;
