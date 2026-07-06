@@ -287,12 +287,13 @@ impl BoardWidget {
                     .find(|_move| _move.from == self.held_piece_pos.unwrap() && _move.to == target)
                 {
                     Some(_move) => {
-                        self.board = _move.board.flip_view();
+                        self.board = _move.board;
                         self.legal_moves = self.board.generate_legal_moves();
 
-                        // self.board = _move.board.clone();
+                        // // Pretend the other player didn't make a move
+                        // self.board = _move.board.flip_view();
+                        // self.board.halfmove_count += 1;
                         // self.legal_moves = self.board.generate_legal_moves();
-                        // self.halfmove_count += 1;
                     }
                     None => (),
                 };

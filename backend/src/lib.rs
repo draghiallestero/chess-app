@@ -190,7 +190,7 @@ impl Board {
                 moves.push(Move {
                     from: pos,
                     to: target_pos,
-                    board: new_board,
+                    board: new_board.flip_view(),
                 })
             }
         };
@@ -212,7 +212,7 @@ impl Board {
                     }
                 }
             }
-            new_board.player.remove_piece(Piece::Queens, attack_pos);
+            new_board.opponent.remove_any_piece(attack_pos);
         };
 
         // Occupied squares
@@ -227,12 +227,13 @@ impl Board {
             // Move
             let target_pos_list = &PAWN_TARGET_POS_LISTS_2D[pos as usize];
             for target_pos in target_pos_list {
+                let (target_rank, _) = from_pos(*target_pos);
                 let target_pos_free = !occupied_squares.get(*target_pos);
                 if target_pos_free {
                     let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Pawns, pos, *target_pos);
                     // En passant
-                    if rank == 1 {
+                    if rank == 1 && target_rank == 3 {
                         // En passant is stored as if from the other point-of-view
                         new_board.en_passant_target_pos = Some(63 - to_pos(rank + 1, file));
                     }
@@ -270,7 +271,27 @@ impl Board {
                     let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Pawns, pos, *attack_pos);
                     remove_attacked_piece(&mut new_board, *attack_pos);
-                    try_add_move(pos, *attack_pos, new_board);
+                    // Promotion
+                    if rank == 6 {
+                        new_board.player.remove_piece(Piece::Pawns, *attack_pos);
+                        // Queen promotion goes first as the "preferred" player choice
+                        new_board.player.add_piece(Piece::Queens, *attack_pos);
+                        try_add_move(pos, *attack_pos, new_board);
+                        // Rook
+                        new_board.player.remove_piece(Piece::Queens, *attack_pos);
+                        new_board.player.add_piece(Piece::Rooks, *attack_pos);
+                        try_add_move(pos, *attack_pos, new_board);
+                        // Knight
+                        new_board.player.remove_piece(Piece::Rooks, *attack_pos);
+                        new_board.player.add_piece(Piece::Knights, *attack_pos);
+                        try_add_move(pos, *attack_pos, new_board);
+                        // Bishop
+                        new_board.player.remove_piece(Piece::Knights, *attack_pos);
+                        new_board.player.add_piece(Piece::Bishops, *attack_pos);
+                        try_add_move(pos, *attack_pos, new_board);
+                    } else {
+                        try_add_move(pos, *attack_pos, new_board);
+                    }
                 }
             }
 
@@ -537,13 +558,27 @@ impl Board {
         let mut attacking_positions = Vec::default();
 
         // Pawns
-        let current_pos = to_pos(rank + 1, file);
-        if self.opponent.pawns.get(current_pos) {
-            if RETURN_EARLY {
-                return (attacking_positions, true);
+        if rank < 7 {
+            if file > 0 {
+                let current_pos = to_pos(rank + 1, file - 1);
+                if self.opponent.pawns.get(current_pos) {
+                    if RETURN_EARLY {
+                        return (attacking_positions, true);
+                    }
+                    attacking_positions.push(current_pos);
+                    return (attacking_positions, true);
+                }
             }
-            attacking_positions.push(current_pos);
-            return (attacking_positions, true);
+            if file < 7 {
+                let current_pos = to_pos(rank + 1, file + 1);
+                if self.opponent.pawns.get(current_pos) {
+                    if RETURN_EARLY {
+                        return (attacking_positions, true);
+                    }
+                    attacking_positions.push(current_pos);
+                    return (attacking_positions, true);
+                }
+            }
         }
 
         // Cardinal directions
@@ -1024,7 +1059,7 @@ impl Board {
         board.partial_halfmove_count = i32::from_str_radix(chars, 10).unwrap();
         fen_ix = fen_ix2 + 1;
 
-        // Halfmove clock
+        // Fullmove counter
         let chars = &fen[fen_ix..fen.len()];
         board.halfmove_count = 2 * (i32::from_str_radix(chars, 10).unwrap() - 1);
         if side_to_move == 'b' {
@@ -1044,27 +1079,62 @@ pub struct Move {
 #[cfg(test)]
 mod tests {
     use core::num;
+    use std::default;
 
     use super::*;
 
-    fn perft_for_depth(board: Board, depth: i32, max_depth: i32) -> i32 {
+    fn perft_for_depth(board: Board, depth: i32, max_depth: i32, divide: bool) -> i32 {
         let legal_moves = board.generate_legal_moves();
         if depth == max_depth {
             return 1;
         }
 
+        let mut divide_strings = Vec::default();
+
         let mut num_moves = 0;
         for _move in legal_moves {
-            num_moves += perft_for_depth(_move.board, depth + 1, max_depth);
+            let moves_for_move = perft_for_depth(_move.board, depth + 1, max_depth, false);
+            num_moves += moves_for_move;
+            if divide {
+                divide_strings.push(format!(
+                    "{}{}: {}",
+                    to_chars(if _move.board.halfmove_count % 2 == 1 {
+                        _move.from
+                    } else {
+                        63 - _move.from
+                    }),
+                    to_chars(if _move.board.halfmove_count % 2 == 1 {
+                        _move.to
+                    } else {
+                        63 - _move.to
+                    }),
+                    moves_for_move
+                ));
+            }
+        }
+        // Compare to
+        // stockfish
+        // position fen <fen>
+        // go perft <depth>
+        // And wrap that in <cmd> | tail -n +2 | head -n -3 | sort
+        if divide {
+            divide_strings.sort();
+            for divide_string in divide_strings {
+                println!("{}", divide_string);
+            }
         }
         num_moves
     }
 
     #[test]
     fn perft() {
-        let board = Board::default();
-        assert_eq!(perft_for_depth(board, 0, 1), 20);
-        // assert_eq!(perft_for_depth(board, 0, 2), 400);
+        let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
+        assert_eq!(perft_for_depth(board, 0, 1, false), 20);
+        assert_eq!(perft_for_depth(board, 0, 2, false), 400);
+        assert_eq!(perft_for_depth(board, 0, 3, false), 8902);
+        assert_eq!(perft_for_depth(board, 0, 4, false), 197281);
+        assert_eq!(perft_for_depth(board, 0, 5, true), 4865609);
+        assert_eq!(perft_for_depth(board, 0, 6, true), 119060324);
     }
 
     #[test]
