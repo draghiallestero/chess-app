@@ -8,6 +8,9 @@
                 "args": [
                     "build"
                 ],
+                "env": {
+                    "RUST_BACKTRACE": "1"
+                },
                 "cwd": "${workspaceFolder}/ui"
             },
             "args": [],
@@ -22,6 +25,9 @@
                     "build",
                     "--release"
                 ],
+                "env": {
+                    "RUST_BACKTRACE": "1"
+                },
                 "cwd": "${workspaceFolder}/ui"
             },
             "args": [],
@@ -35,6 +41,9 @@
                 "args": [
                     "test"
                 ],
+                "env": {
+                    "RUST_BACKTRACE": "1"
+                },
                 "cwd": "${workspaceFolder}/backend"
             },
             "args": [],

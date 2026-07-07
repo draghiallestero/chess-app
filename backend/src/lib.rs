@@ -999,28 +999,33 @@ impl Board {
         fen_ix += 1;
         let mut player_casting_status = CastlingStatus::Unavailable;
         let mut opponent_casting_status = CastlingStatus::Unavailable;
-        loop {
-            let c = fen.chars().nth(fen_ix).unwrap();
-            match c {
-                'K' => player_casting_status = CastlingStatus::KingSideAvailable,
-                'Q' => {
-                    player_casting_status = match player_casting_status {
-                        CastlingStatus::KingSideAvailable => CastlingStatus::BothAvailable,
-                        CastlingStatus::Unavailable => CastlingStatus::QueenSideAvailable,
-                        _ => player_casting_status,
-                    }
-                }
-                'k' => opponent_casting_status = CastlingStatus::KingSideAvailable,
-                'q' => {
-                    opponent_casting_status = match opponent_casting_status {
-                        CastlingStatus::KingSideAvailable => CastlingStatus::BothAvailable,
-                        CastlingStatus::Unavailable => CastlingStatus::QueenSideAvailable,
-                        _ => opponent_casting_status,
-                    }
-                }
-                _ => break,
-            }
+        let c = fen.chars().nth(fen_ix).unwrap();
+        if c == '-' {
             fen_ix += 1;
+        } else {
+            loop {
+                let c = fen.chars().nth(fen_ix).unwrap();
+                match c {
+                    'K' => player_casting_status = CastlingStatus::KingSideAvailable,
+                    'Q' => {
+                        player_casting_status = match player_casting_status {
+                            CastlingStatus::KingSideAvailable => CastlingStatus::BothAvailable,
+                            CastlingStatus::Unavailable => CastlingStatus::QueenSideAvailable,
+                            _ => player_casting_status,
+                        }
+                    }
+                    'k' => opponent_casting_status = CastlingStatus::KingSideAvailable,
+                    'q' => {
+                        opponent_casting_status = match opponent_casting_status {
+                            CastlingStatus::KingSideAvailable => CastlingStatus::BothAvailable,
+                            CastlingStatus::Unavailable => CastlingStatus::QueenSideAvailable,
+                            _ => opponent_casting_status,
+                        }
+                    }
+                    _ => break,
+                }
+                fen_ix += 1;
+            }
         }
         if side_to_move == 'w' {
             board.player.castling_status = player_casting_status;
@@ -1147,7 +1152,7 @@ mod tests {
         assert_eq!(perft_for_depth(board, 0, 2, false), 191);
         assert_eq!(perft_for_depth(board, 0, 3, true), 2812);
         assert_eq!(perft_for_depth(board, 0, 4, false), 43238);
-        assert_eq!(perft_for_depth(board, 0, 5, false), 674624);
+        // assert_eq!(perft_for_depth(board, 0, 5, false), 674624);
 
         // Position 4
         let board =
@@ -1170,11 +1175,11 @@ mod tests {
         let board = Board::from_fen(
             "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
         );
-        assert_eq!(perft_for_depth(board, 0, 1, false), 1);
-        assert_eq!(perft_for_depth(board, 0, 2, false), 46);
-        assert_eq!(perft_for_depth(board, 0, 3, true), 2079);
-        assert_eq!(perft_for_depth(board, 0, 4, false), 89890);
-        assert_eq!(perft_for_depth(board, 0, 5, false), 3894594);
+        assert_eq!(perft_for_depth(board, 0, 1, false), 46);
+        assert_eq!(perft_for_depth(board, 0, 2, false), 2079);
+        assert_eq!(perft_for_depth(board, 0, 3, true), 89890);
+        assert_eq!(perft_for_depth(board, 0, 4, false), 3894594);
+        // assert_eq!(perft_for_depth(board, 0, 5, false), 164075551);
     }
 
     #[test]

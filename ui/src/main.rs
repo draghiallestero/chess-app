@@ -298,6 +298,8 @@ impl BoardWidget {
                     None => (),
                 };
                 self.held_piece_pos = None;
+
+                self.legal_moves = self.board.generate_legal_moves();
             }
             Message::MouseMoved(pos) => {
                 self.mouse_pos = pos;
