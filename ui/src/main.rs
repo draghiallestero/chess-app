@@ -44,7 +44,11 @@ struct BoardWidget {
 impl Default for BoardWidget {
     fn default() -> Self {
         let board = Board::default();
-        let legal_moves = board.generate_legal_moves();
+        let legal_moves = {
+            let mut moves = Vec::default();
+            board.generate_legal_moves(&mut moves);
+            moves
+        };
         BoardWidget {
             board: board,
             held_piece_pos: None,
@@ -288,18 +292,16 @@ impl BoardWidget {
                 {
                     Some(_move) => {
                         self.board = _move.board;
-                        self.legal_moves = self.board.generate_legal_moves();
+                        self.board.generate_legal_moves(&mut self.legal_moves);
 
                         // // Pretend the other player didn't make a move
                         // self.board = _move.board.flip_view();
                         // self.board.halfmove_count += 1;
-                        // self.legal_moves = self.board.generate_legal_moves();
+                        // self.board.generate_legal_moves(&mut self.legal_moves);
                     }
                     None => (),
                 };
                 self.held_piece_pos = None;
-
-                self.legal_moves = self.board.generate_legal_moves();
             }
             Message::MouseMoved(pos) => {
                 self.mouse_pos = pos;

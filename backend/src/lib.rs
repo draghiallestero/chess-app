@@ -177,9 +177,8 @@ impl Board {
         }
     }
 
-    pub fn generate_legal_moves(&self) -> Vec<Move> {
-        // Setup return vector
-        let mut moves = Vec::new();
+    pub fn generate_legal_moves(&self, moves: &mut Vec<Move>) {
+        moves.clear();
 
         // Check whether a move is valid before adding it
         let mut try_add_move = |pos, target_pos, new_board: Board| {
@@ -513,8 +512,6 @@ impl Board {
                 _ => (),
             }
         }
-
-        moves
     }
 
     fn new_move_board(&self) -> Board {
@@ -1070,6 +1067,7 @@ impl Board {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct Move {
     pub from: u8,
     pub to: u8,
@@ -1079,21 +1077,31 @@ pub struct Move {
 #[cfg(test)]
 mod tests {
     use core::num;
-    use std::default;
+    use std::{array::from_fn, default};
 
     use super::*;
 
-    fn perft_for_depth(board: Board, depth: i32, max_depth: i32, divide: bool) -> i32 {
-        let legal_moves = board.generate_legal_moves();
+    fn perft_for_depth(
+        board: Board,
+        depth: usize,
+        max_depth: usize,
+        moves_array: &mut [Vec<Move>],
+        divide: bool,
+    ) -> i32 {
         if depth == max_depth {
             return 1;
         }
 
+        // Split off current vector and get moves
+        let (mut moves, mut moves_array) = moves_array.split_first_mut().unwrap();
+        board.generate_legal_moves(&mut moves);
+
         let mut divide_strings = Vec::default();
 
         let mut num_moves = 0;
-        for _move in legal_moves {
-            let moves_for_move = perft_for_depth(_move.board, depth + 1, max_depth, false);
+        for _move in moves {
+            let moves_for_move =
+                perft_for_depth(_move.board, depth + 1, max_depth, &mut moves_array, false);
             num_moves += moves_for_move;
             if divide {
                 divide_strings.push(format!(
@@ -1128,58 +1136,78 @@ mod tests {
 
     #[test]
     fn perft() {
+        let mut moves_array: [Vec<Move>; 6] = from_fn(|_| Vec::default());
+
         // Initial position
         let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
-        assert_eq!(perft_for_depth(board, 0, 1, false), 20);
-        assert_eq!(perft_for_depth(board, 0, 2, false), 400);
-        assert_eq!(perft_for_depth(board, 0, 3, false), 8902);
-        assert_eq!(perft_for_depth(board, 0, 4, false), 197281);
-        assert_eq!(perft_for_depth(board, 0, 5, false), 4865609);
-        // assert_eq!(perft_for_depth(board, 0, 6, true), 119060324);
+        assert_eq!(perft_for_depth(board, 0, 1, &mut moves_array, false), 20);
+        assert_eq!(perft_for_depth(board, 0, 2, &mut moves_array, false), 400);
+        assert_eq!(perft_for_depth(board, 0, 3, &mut moves_array, false), 8902);
+        assert_eq!(
+            perft_for_depth(board, 0, 4, &mut moves_array, false),
+            197281
+        );
+        assert_eq!(
+            perft_for_depth(board, 0, 5, &mut moves_array, false),
+            4865609
+        );
+        // assert_eq!(perft_for_depth(board, 0, 6, &mut moves_array, true), 119060324);
 
         // Position 2
         let board =
             Board::from_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
-        assert_eq!(perft_for_depth(board, 0, 1, false), 48);
-        assert_eq!(perft_for_depth(board, 0, 2, false), 2039);
-        assert_eq!(perft_for_depth(board, 0, 3, true), 97862);
-        assert_eq!(perft_for_depth(board, 0, 4, false), 4085603);
-        // assert_eq!(perft_for_depth(board, 0, 5, false), 193690690);
+        assert_eq!(perft_for_depth(board, 0, 1, &mut moves_array, false), 48);
+        assert_eq!(perft_for_depth(board, 0, 2, &mut moves_array, false), 2039);
+        assert_eq!(perft_for_depth(board, 0, 3, &mut moves_array, true), 97862);
+        assert_eq!(
+            perft_for_depth(board, 0, 4, &mut moves_array, false),
+            4085603
+        );
+        // assert_eq!(perft_for_depth(board, 0, 5, &mut moves_array, false), 193690690);
 
         // Position 3
         let board = Board::from_fen("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
-        assert_eq!(perft_for_depth(board, 0, 1, false), 14);
-        assert_eq!(perft_for_depth(board, 0, 2, false), 191);
-        assert_eq!(perft_for_depth(board, 0, 3, true), 2812);
-        assert_eq!(perft_for_depth(board, 0, 4, false), 43238);
-        // assert_eq!(perft_for_depth(board, 0, 5, false), 674624);
+        assert_eq!(perft_for_depth(board, 0, 1, &mut moves_array, false), 14);
+        assert_eq!(perft_for_depth(board, 0, 2, &mut moves_array, false), 191);
+        assert_eq!(perft_for_depth(board, 0, 3, &mut moves_array, true), 2812);
+        assert_eq!(perft_for_depth(board, 0, 4, &mut moves_array, false), 43238);
+        // assert_eq!(perft_for_depth(board, 0, 5, &mut moves_array, false), 674624);
 
         // Position 4
         let board =
             Board::from_fen("r3k2r/Pppp1ppp/1b3nbN/nP6/BBP1P3/q4N2/Pp1P2PP/R2Q1RK1 w kq - 0 1");
-        assert_eq!(perft_for_depth(board, 0, 1, false), 6);
-        assert_eq!(perft_for_depth(board, 0, 2, false), 264);
-        assert_eq!(perft_for_depth(board, 0, 3, true), 9467);
-        assert_eq!(perft_for_depth(board, 0, 4, false), 422333);
-        // assert_eq!(perft_for_depth(board, 0, 5, false), 15833292);
+        assert_eq!(perft_for_depth(board, 0, 1, &mut moves_array, false), 6);
+        assert_eq!(perft_for_depth(board, 0, 2, &mut moves_array, false), 264);
+        assert_eq!(perft_for_depth(board, 0, 3, &mut moves_array, true), 9467);
+        assert_eq!(
+            perft_for_depth(board, 0, 4, &mut moves_array, false),
+            422333
+        );
+        // assert_eq!(perft_for_depth(board, 0, 5, &mut moves_array, false), 15833292);
 
         // Position 5
         let board = Board::from_fen("rnbq1k1r/pp1Pbppp/2p5/8/2B5/8/PPP1NnPP/RNBQK2R w KQ - 1 8");
-        assert_eq!(perft_for_depth(board, 0, 1, false), 44);
-        assert_eq!(perft_for_depth(board, 0, 2, false), 1486);
-        assert_eq!(perft_for_depth(board, 0, 3, true), 62379);
-        assert_eq!(perft_for_depth(board, 0, 4, false), 2103487);
-        // assert_eq!(perft_for_depth(board, 0, 5, false), 89941194);
+        assert_eq!(perft_for_depth(board, 0, 1, &mut moves_array, false), 44);
+        assert_eq!(perft_for_depth(board, 0, 2, &mut moves_array, false), 1486);
+        assert_eq!(perft_for_depth(board, 0, 3, &mut moves_array, true), 62379);
+        assert_eq!(
+            perft_for_depth(board, 0, 4, &mut moves_array, false),
+            2103487
+        );
+        // assert_eq!(perft_for_depth(board, 0, 5, &mut moves_array, false), 89941194);
 
         // Position 6
         let board = Board::from_fen(
             "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
         );
-        assert_eq!(perft_for_depth(board, 0, 1, false), 46);
-        assert_eq!(perft_for_depth(board, 0, 2, false), 2079);
-        assert_eq!(perft_for_depth(board, 0, 3, true), 89890);
-        assert_eq!(perft_for_depth(board, 0, 4, false), 3894594);
-        // assert_eq!(perft_for_depth(board, 0, 5, false), 164075551);
+        assert_eq!(perft_for_depth(board, 0, 1, &mut moves_array, false), 46);
+        assert_eq!(perft_for_depth(board, 0, 2, &mut moves_array, false), 2079);
+        assert_eq!(perft_for_depth(board, 0, 3, &mut moves_array, true), 89890);
+        assert_eq!(
+            perft_for_depth(board, 0, 4, &mut moves_array, false),
+            3894594
+        );
+        // assert_eq!(perft_for_depth(board, 0, 5, &mut moves_array, false), 164075551);
     }
 
     #[test]
