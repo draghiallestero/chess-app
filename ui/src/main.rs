@@ -4,6 +4,8 @@ use std::mem::swap;
 use backend::BitBoard;
 use backend::Board;
 use backend::Move;
+use backend::move_sets::to_chars;
+use backend::move_sets::to_pos;
 use bit_iter::BitIter;
 use iced::Background;
 use iced::Border;
@@ -298,6 +300,22 @@ impl BoardWidget {
                         // self.board = _move.board.flip_view();
                         // self.board.halfmove_count += 1;
                         // self.board.generate_legal_moves(&mut self.legal_moves);
+
+                        match self.board.search_for_best_move(4) {
+                            Some(_move) => {
+                                println!(
+                                    "{} best move: {} to {}",
+                                    if self.board.halfmove_count % 2 == 0 {
+                                        "White"
+                                    } else {
+                                        "Black"
+                                    },
+                                    to_chars(_move.from),
+                                    to_chars(_move.to)
+                                )
+                            }
+                            None => (),
+                        }
                     }
                     None => (),
                 };

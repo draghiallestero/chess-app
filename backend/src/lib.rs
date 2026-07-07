@@ -1,8 +1,12 @@
 pub mod bitboard;
 pub mod move_sets;
+pub mod piece_square_tables;
 pub use bitboard::BitBoard;
+use piece_square_tables::MIDGAME_PAWNS;
 use std::{
     cell::RefCell,
+    cmp::{Ordering, max, max_by, min},
+    fs::OpenOptions,
     iter::StepBy,
     ops::{Neg, Not, Range},
     sync::LazyLock,
@@ -12,10 +16,15 @@ use std::{
 use arrayvec::ArrayVec;
 use bit_iter::BitIter;
 
-use crate::move_sets::{
-    BISHOP_TARGET_POS_LISTS_2D, KING_TARGET_POS_LISTS_2D, KNIGHT_TARGET_POS_LISTS_2D,
-    PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D,
-    ROOK_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars, to_pos,
+use crate::{
+    move_sets::{
+        BISHOP_TARGET_POS_LISTS_2D, KING_TARGET_POS_LISTS_2D, KNIGHT_TARGET_POS_LISTS_2D,
+        PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D,
+        ROOK_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars, to_pos,
+    },
+    piece_square_tables::{
+        MIDGAME_BISHOPS, MIDGAME_KINGS, MIDGAME_KNIGHTS, MIDGAME_QUEENS, MIDGAME_ROOKS,
+    },
 };
 
 #[derive(Default, Clone, Copy)]
@@ -106,6 +115,39 @@ impl Player {
             ..*self
         }
     }
+
+    pub fn evaluate_position(&self) -> i16 {
+        let pawns = 100;
+        let knights = 320;
+        let bishops = 330;
+        let rooks = 500;
+        let queens = 900;
+        let kings = 20000;
+
+        let material_value = pawns * (self.pawns.count() as i16)
+            + knights * (self.knights.count() as i16)
+            + bishops * (self.bishops.count() as i16)
+            + rooks * (self.rooks.count() as i16)
+            + queens * (self.queens.count() as i16)
+            + kings * (self.kings.count() as i16);
+
+        let calc_pst_value = |bitboard: BitBoard, pst: [i16; 64]| {
+            let mut value = 0;
+            for pos in BitIter::from(bitboard.board) {
+                value += pst[pos];
+            }
+            value
+        };
+        let pawn_pst = calc_pst_value(self.pawns, MIDGAME_PAWNS);
+        let knights_pst = calc_pst_value(self.knights, MIDGAME_KNIGHTS);
+        let bishops_pst = calc_pst_value(self.bishops, MIDGAME_BISHOPS);
+        let rooks_pst = calc_pst_value(self.rooks, MIDGAME_ROOKS);
+        let queens_pst = calc_pst_value(self.queens, MIDGAME_QUEENS);
+        let kings_pst = calc_pst_value(self.kings, MIDGAME_KINGS);
+        let pst_value = pawn_pst + knights_pst + bishops_pst + rooks_pst + queens_pst + kings_pst;
+
+        material_value + pst_value
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -187,6 +229,7 @@ impl Board {
                     from: pos,
                     to: target_pos,
                     board: new_board.flip_view(),
+                    evaluation: 0,
                 })
             }
         };
@@ -767,6 +810,69 @@ impl Board {
         return self.get_attacking_positions::<true>(pos).1;
     }
 
+    pub fn evaluate_position(&self) -> i16 {
+        let player_score = self.player.evaluate_position();
+        let oppponent_score = self.opponent.evaluate_position();
+        player_score - oppponent_score
+    }
+
+    pub fn search_for_best_move(&self, max_depth: i32) -> Option<Move> {
+        let moves = {
+            let mut moves = Vec::default();
+            self.generate_legal_moves(&mut moves);
+            moves
+        };
+        if moves.is_empty() {
+            return None;
+        }
+        let mut best_move = Some(moves[0]);
+        let mut alpha = i16::MIN + 1;
+        let beta = i16::MAX - 1;
+        for _move in moves {
+            let alpha_candidate = -_move
+                .board
+                .search_for_best_move_impl(1, max_depth, -beta, -alpha);
+            if alpha_candidate > alpha {
+                alpha = alpha_candidate;
+                best_move = Some(_move);
+            }
+        }
+        best_move
+    }
+
+    pub fn search_for_best_move_impl(
+        &self,
+        depth: i32,
+        max_depth: i32,
+        alpha: i16,
+        beta: i16,
+    ) -> i16 {
+        if depth == max_depth {
+            return self.evaluate_position();
+        }
+
+        let moves = {
+            let mut moves = Vec::default();
+            self.generate_legal_moves(&mut moves);
+            moves
+        };
+
+        if moves.is_empty() {
+            return self.evaluate_position();
+        }
+
+        let mut alpha = alpha;
+        for _move in moves {
+            let alpha_candidate =
+                -_move
+                    .board
+                    .search_for_best_move_impl(depth + 1, max_depth, -beta, -alpha);
+            alpha = max(alpha, alpha_candidate);
+        }
+
+        alpha
+    }
+
     pub fn to_fen(&self) -> String {
         let mut fen = String::default();
         fen.reserve(63);
@@ -1067,11 +1173,12 @@ impl Board {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Default, Clone, Copy)]
 pub struct Move {
     pub from: u8,
     pub to: u8,
     pub board: Board,
+    pub evaluation: i16,
 }
 
 #[cfg(test)]
