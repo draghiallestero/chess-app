@@ -1,4 +1,6 @@
 pub mod bitboard;
+mod board;
+pub mod en_passant;
 pub mod move_sets;
 pub mod piece_square_tables;
 pub use bitboard::BitBoard;
@@ -17,8 +19,10 @@ use arrayvec::ArrayVec;
 use bit_iter::BitIter;
 
 use crate::{
+    en_passant::EnPassant,
     move_sets::{
-        BISHOP_TARGET_POS_LISTS_2D, KING_TARGET_POS_LISTS_2D, KNIGHT_TARGET_POS_LISTS_2D,
+        BISHOP_TARGET_POS_LISTS_2D, EN_PASSANT_LISTS, KING_TARGET_POS_LISTS_2D,
+        KNIGHT_TARGET_POS_LISTS_2D, PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D,
         QUEEN_TARGET_POS_LISTS_2D, ROOK_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars,
         to_pos,
     },
@@ -157,7 +161,7 @@ pub struct Board {
 
     pub partial_halfmove_count: i32,
     pub halfmove_count: i32,
-    en_passant_target_pos: Option<u8>,
+    en_passant: EnPassant,
 }
 
 impl Default for Board {
@@ -203,7 +207,7 @@ impl Default for Board {
             opponent: opponent,
             partial_halfmove_count: 0,
             halfmove_count: 0,
-            en_passant_target_pos: None,
+            en_passant: EnPassant::default(),
         }
     }
 }
@@ -215,353 +219,7 @@ impl Board {
             opponent: Player::default(),
             partial_halfmove_count: 0,
             halfmove_count: 0,
-            en_passant_target_pos: None,
-        }
-    }
-
-    pub fn generate_legal_moves(&self, moves: &mut Vec<Move>) {
-        moves.clear();
-
-        // Check whether a move is valid before adding it
-        let mut try_add_move = |pos, target_pos, new_board: Board| {
-            if !new_board.is_king_in_check() {
-                moves.push(Move {
-                    from: pos,
-                    to: target_pos,
-                    board: new_board.flip_view(),
-                    evaluation: 0,
-                })
-            }
-        };
-
-        // Remove attacked piece
-        let remove_attacked_piece = |new_board: &mut Board, attack_pos: u8| {
-            if (attack_pos == 56 || attack_pos == 63) && new_board.opponent.rooks.get(attack_pos) {
-                if attack_pos == 56 {
-                    new_board.opponent.castling_status = match new_board.opponent.castling_status {
-                        CastlingStatus::BothAvailable => CastlingStatus::QueenSideAvailable,
-                        CastlingStatus::KingSideAvailable => CastlingStatus::Unavailable,
-                        _ => new_board.opponent.castling_status,
-                    }
-                } else if attack_pos == 63 {
-                    new_board.opponent.castling_status = match new_board.opponent.castling_status {
-                        CastlingStatus::BothAvailable => CastlingStatus::KingSideAvailable,
-                        CastlingStatus::QueenSideAvailable => CastlingStatus::Unavailable,
-                        _ => new_board.opponent.castling_status,
-                    }
-                }
-            }
-            new_board.opponent.remove_any_piece(attack_pos);
-        };
-
-        // Occupied squares
-        let player_occupied_squares = self.player.occupied_squares();
-        let opponent_occupied_squares = self.opponent.occupied_squares();
-        let occupied_squares = player_occupied_squares | opponent_occupied_squares;
-
-        // Pawns
-        let mut try_add_pawn_move = |pos, target_pos, mut new_board: Board| {
-            let (target_rank, _) = from_pos(target_pos);
-            // Promotion
-            if target_rank == 7 {
-                new_board.player.remove_piece(Piece::Pawns, target_pos);
-                // Queen promotion goes first as the "preferred" player choice
-                new_board.player.add_piece(Piece::Queens, target_pos);
-                try_add_move(pos, target_pos, new_board);
-                new_board.player.remove_piece(Piece::Queens, target_pos);
-                // Rook
-                new_board.player.add_piece(Piece::Rooks, target_pos);
-                try_add_move(pos, target_pos, new_board);
-                new_board.player.remove_piece(Piece::Rooks, target_pos);
-                // Knight
-                new_board.player.add_piece(Piece::Knights, target_pos);
-                try_add_move(pos, target_pos, new_board);
-                new_board.player.remove_piece(Piece::Knights, target_pos);
-                // Bishop
-                new_board.player.add_piece(Piece::Bishops, target_pos);
-                try_add_move(pos, target_pos, new_board);
-            } else {
-                try_add_move(pos, target_pos, new_board);
-            }
-        };
-        for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
-            let (rank, file) = from_pos(pos);
-            if rank == 7 {
-                continue;
-            }
-
-            // Pawns can only move forward
-            let target_pos = to_pos(rank + 1, file);
-            let target_pos_free = !occupied_squares.get(target_pos);
-            if target_pos_free {
-                let mut new_board = self.new_move_board();
-                new_board.player.move_piece(Piece::Pawns, pos, target_pos);
-                try_add_pawn_move(pos, target_pos, new_board);
-                // Double push
-                if rank == 1 {
-                    let en_passant_target_pos = to_pos(2, file);
-                    let target_pos = to_pos(3, file);
-                    let target_pos_free = !occupied_squares.get(target_pos);
-                    if target_pos_free {
-                        let mut new_board = self.new_move_board();
-                        new_board.player.move_piece(Piece::Pawns, pos, target_pos);
-                        // En passant attacks can be done by the opponent only after a player's double push
-                        // En passant is always stored as if from the player PoV
-                        new_board.en_passant_target_pos = if self.halfmove_count % 2 == 0 {
-                            Some(en_passant_target_pos)
-                        } else {
-                            Some(63 - en_passant_target_pos)
-                        };
-                        try_add_pawn_move(pos, target_pos, new_board);
-                    }
-                }
-            }
-
-            // Pawns can attack diagonally
-            {
-                let mut try_attack = |attack_rank, attack_file| {
-                    let attack_pos = to_pos(attack_rank, attack_file);
-                    let attack_pos_occupied = opponent_occupied_squares.get(attack_pos);
-                    if attack_pos_occupied {
-                        let mut new_board = self.new_move_board();
-                        new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
-                        remove_attacked_piece(&mut new_board, attack_pos);
-                        try_add_pawn_move(pos, attack_pos, new_board);
-                    } else {
-                        let attack_pos_free = !occupied_squares.get(attack_pos);
-                        if attack_pos_free && attack_rank == 5 {
-                            // En passant attacks remove the pawn adjacent to the pawn's source position
-                            match self.en_passant_target_pos {
-                                Some(en_passant_target_pos) => {
-                                    // En passant is always stored as if from the player PoV
-                                    let en_passant_target_pos = if self.halfmove_count % 2 == 0 {
-                                        en_passant_target_pos
-                                    } else {
-                                        63 - en_passant_target_pos
-                                    };
-                                    if en_passant_target_pos == attack_pos {
-                                        let mut new_board = self.new_move_board();
-                                        new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
-                                        new_board
-                                            .opponent
-                                            .remove_any_piece(to_pos(attack_rank - 1, attack_file));
-                                        try_add_pawn_move(pos, attack_pos, new_board);
-                                    }
-                                }
-                                None => (),
-                            }
-                        }
-                    }
-                };
-                if file > 0 {
-                    try_attack(rank + 1, file - 1);
-                }
-                if file < 7 {
-                    try_attack(rank + 1, file + 1);
-                }
-            }
-        }
-
-        // Rooks
-        let update_castling_status_when_rook_moves = |pos, new_board: &mut Board| {
-            if pos == 0 {
-                match new_board.player.castling_status {
-                    CastlingStatus::BothAvailable => {
-                        new_board.player.castling_status = CastlingStatus::KingSideAvailable
-                    }
-                    CastlingStatus::QueenSideAvailable => {
-                        new_board.player.castling_status = CastlingStatus::Unavailable
-                    }
-                    _ => (),
-                }
-            } else if pos == 7 {
-                match new_board.player.castling_status {
-                    CastlingStatus::BothAvailable => {
-                        new_board.player.castling_status = CastlingStatus::QueenSideAvailable
-                    }
-                    CastlingStatus::KingSideAvailable => {
-                        new_board.player.castling_status = CastlingStatus::Unavailable
-                    }
-                    _ => (),
-                }
-            }
-        };
-        for pos in BitIter::from(self.player.rooks.board).map(|x| x as u8) {
-            for direction in 0..4 {
-                let target_pos_list = &ROOK_TARGET_POS_LISTS_2D[pos as usize];
-                for target_pos in &target_pos_list[direction] {
-                    // Move
-                    let target_pos_free = !occupied_squares.get(*target_pos);
-                    if target_pos_free {
-                        let mut new_board = self.new_move_board();
-                        new_board.player.move_piece(Piece::Rooks, pos, *target_pos);
-                        update_castling_status_when_rook_moves(pos, &mut new_board);
-                        try_add_move(pos, *target_pos, new_board);
-                    } else {
-                        let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
-                        if attack_pos_occupied {
-                            // Attack
-                            let mut new_board = self.new_move_board();
-                            new_board.player.move_piece(Piece::Rooks, pos, *target_pos);
-                            remove_attacked_piece(&mut new_board, *target_pos);
-                            update_castling_status_when_rook_moves(pos, &mut new_board);
-                            try_add_move(pos, *target_pos, new_board);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Knights
-        for pos in BitIter::from(self.player.knights.board).map(|x| x as u8) {
-            let target_pos_list = &KNIGHT_TARGET_POS_LISTS_2D[pos as usize];
-            for target_pos in target_pos_list {
-                let mut new_board = self.new_move_board();
-                new_board
-                    .player
-                    .move_piece(Piece::Knights, pos, *target_pos);
-                let target_pos_free = !occupied_squares.get(*target_pos);
-                if target_pos_free {
-                    // Move
-                    try_add_move(pos, *target_pos, new_board);
-                } else {
-                    let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
-                    if attack_pos_occupied {
-                        // Attack
-                        remove_attacked_piece(&mut new_board, *target_pos);
-                        try_add_move(pos, *target_pos, new_board);
-                    }
-                }
-            }
-        }
-
-        // Bishops
-        for pos in BitIter::from(self.player.bishops.board).map(|x| x as u8) {
-            for direction in 0..4 {
-                let target_pos_list = &BISHOP_TARGET_POS_LISTS_2D[pos as usize];
-                for target_pos in &target_pos_list[direction] {
-                    let target_pos_free = !occupied_squares.get(*target_pos);
-                    if target_pos_free {
-                        // Move
-                        let mut new_board = self.new_move_board();
-                        new_board
-                            .player
-                            .move_piece(Piece::Bishops, pos, *target_pos);
-                        try_add_move(pos, *target_pos, new_board);
-                    } else {
-                        let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
-                        if attack_pos_occupied {
-                            // Attack
-                            let mut new_board = self.new_move_board();
-                            new_board
-                                .player
-                                .move_piece(Piece::Bishops, pos, *target_pos);
-                            remove_attacked_piece(&mut new_board, *target_pos);
-                            try_add_move(pos, *target_pos, new_board);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Queens
-        for pos in BitIter::from(self.player.queens.board).map(|x| x as u8) {
-            for direction in 0..8 {
-                let target_pos_list = &QUEEN_TARGET_POS_LISTS_2D[pos as usize];
-                for target_pos in &target_pos_list[direction] {
-                    let target_pos_free = !occupied_squares.get(*target_pos);
-                    if target_pos_free {
-                        // Move
-                        let mut new_board = self.new_move_board();
-                        new_board.player.move_piece(Piece::Queens, pos, *target_pos);
-                        try_add_move(pos, *target_pos, new_board);
-                    } else {
-                        let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
-                        if attack_pos_occupied {
-                            // Attack
-                            let mut new_board = self.new_move_board();
-                            new_board.player.move_piece(Piece::Queens, pos, *target_pos);
-                            remove_attacked_piece(&mut new_board, *target_pos);
-                            try_add_move(pos, *target_pos, new_board);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-
-        // Kings
-        for pos in BitIter::from(self.player.kings.board).map(|x| x as u8) {
-            let target_pos_list = &KING_TARGET_POS_LISTS_2D[pos as usize];
-            for target_pos in target_pos_list {
-                let target_pos_free = !occupied_squares.get(*target_pos);
-                if target_pos_free {
-                    // Move
-                    let mut new_board = self.new_move_board();
-                    new_board.player.move_piece(Piece::Kings, pos, *target_pos);
-                    new_board.player.castling_status = CastlingStatus::Unavailable;
-                    try_add_move(pos, *target_pos, new_board);
-                } else {
-                    let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
-                    if attack_pos_occupied {
-                        // Attack
-                        let mut new_board = self.new_move_board();
-                        new_board.player.move_piece(Piece::Kings, pos, *target_pos);
-                        remove_attacked_piece(&mut new_board, *target_pos);
-                        new_board.player.castling_status = CastlingStatus::Unavailable;
-                        try_add_move(pos, *target_pos, new_board);
-                    }
-                }
-            }
-
-            // Castling
-            let process_castling = RefCell::new(|pos, pos_adder: i8, rook_pos| {
-                let mut current_pos = (pos as i8 + pos_adder) as u8;
-                // All squares between the king and rook must be free
-                while current_pos != rook_pos {
-                    if occupied_squares.get(current_pos) {
-                        return;
-                    }
-                    current_pos = (current_pos as i8 + pos_adder) as u8;
-                }
-                let mut new_board = self.new_move_board();
-                if !self.is_king_in_check() {
-                    let neighbor_pos = (pos as i8 + pos_adder) as u8;
-                    let target_pos = (pos as i8 + 2 * pos_adder) as u8;
-                    new_board.player.move_piece(Piece::Kings, pos, neighbor_pos);
-                    if !new_board.is_king_in_check() {
-                        new_board
-                            .player
-                            .move_piece(Piece::Kings, neighbor_pos, target_pos);
-                        new_board
-                            .player
-                            .move_piece(Piece::Rooks, rook_pos, neighbor_pos);
-                        new_board.player.castling_status = CastlingStatus::Unavailable;
-                        try_add_move(pos, target_pos, new_board);
-                    }
-                }
-            });
-            let process_kingside_castling = || {
-                (process_castling.borrow_mut())(pos, 1, 7);
-            };
-            let process_queenside_castling = || {
-                (process_castling.borrow_mut())(pos, -1, 0);
-            };
-            match self.player.castling_status {
-                CastlingStatus::BothAvailable => {
-                    process_kingside_castling();
-                    process_queenside_castling();
-                }
-                CastlingStatus::KingSideAvailable => {
-                    process_kingside_castling();
-                }
-                CastlingStatus::QueenSideAvailable => {
-                    process_queenside_castling();
-                }
-                _ => (),
-            }
+            en_passant: EnPassant::default(),
         }
     }
 
@@ -570,7 +228,7 @@ impl Board {
         Board {
             partial_halfmove_count: self.partial_halfmove_count + 1,
             halfmove_count: self.halfmove_count + 1,
-            en_passant_target_pos: None,
+            en_passant: EnPassant::default(),
             ..*self
         }
     }
@@ -962,11 +620,12 @@ impl Board {
 
         // Side to move
         fen.push(' ');
-        fen.push(if board.halfmove_count % 2 == 0 {
+        let side_to_move = if board.halfmove_count % 2 == 0 {
             'w'
         } else {
             'b'
-        });
+        };
+        fen.push(side_to_move);
 
         // Castling ability
         fen.push(' ');
@@ -1005,9 +664,9 @@ impl Board {
 
         // En passant
         fen.push(' ');
-        match board.en_passant_target_pos {
-            Some(pos) => fen.push_str(to_chars(pos)),
-            None => fen.push('-'),
+        match board.en_passant.target_pos {
+            64 => fen.push('-'),
+            _ => fen.push_str(to_chars(board.en_passant.target_pos)),
         }
 
         // Halfmove clock
@@ -1151,7 +810,14 @@ impl Board {
         let c = fen.chars().nth(fen_ix).unwrap();
         if c != '-' {
             let chars = &fen[fen_ix..fen_ix + 2];
-            board.en_passant_target_pos = Some(from_chars(chars));
+            let target_pos = from_chars(chars);
+            if side_to_move == 'w' {
+                let pos = target_pos + 8;
+                board.en_passant = EN_PASSANT_LISTS[63 - pos as usize];
+            } else {
+                let pos = target_pos - 8;
+                board.en_passant = EN_PASSANT_LISTS[pos as usize].flip_view();
+            }
             fen_ix += 1;
         }
         fen_ix += 1;
@@ -1202,7 +868,7 @@ mod tests {
         max_depth: usize,
         moves_array: &mut [Vec<Move>],
         divide: bool,
-    ) -> i32 {
+    ) -> i64 {
         if depth == max_depth {
             return 1;
         }
@@ -1251,7 +917,7 @@ mod tests {
 
     #[test]
     fn perft() {
-        let mut moves_array: [Vec<Move>; 6] = from_fn(|_| Vec::default());
+        let mut moves_array: [Vec<Move>; 7] = from_fn(|_| Vec::default());
 
         // Initial position
         let board = Board::from_fen("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1");
@@ -1270,6 +936,10 @@ mod tests {
             perft_for_depth(board, 0, 6, &mut moves_array, true),
             119060324
         );
+        // assert_eq!(
+        //     perft_for_depth(board, 0, 7, &mut moves_array, true),
+        //     3195901860
+        // );
 
         // Position 2
         let board =
@@ -1331,25 +1001,23 @@ mod tests {
     #[test]
     fn fen() {
         // Initial position
-        let fen = Board::default().to_fen();
-        assert_eq!(
-            fen,
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        );
+        let expected = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let actual = Board::default().to_fen();
+        assert_eq!(expected, actual);
 
         // Round trip check
-        let fen = Board::from_fen(&fen).to_fen();
-        assert_eq!(
-            fen,
-            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
-        );
+        let actual = Board::from_fen(&expected).to_fen();
+        assert_eq!(expected, actual);
 
         // Several round trip checks
-        let fen = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
-        assert_eq!(fen, Board::from_fen(&fen).to_fen());
-        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2";
-        assert_eq!(fen, Board::from_fen(&fen).to_fen());
-        let fen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
-        assert_eq!(fen, Board::from_fen(&fen).to_fen());
+        let expected = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
+        let actual = Board::from_fen(&expected).to_fen();
+        assert_eq!(expected, actual);
+        let expected = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2";
+        let actual = Board::from_fen(&expected).to_fen();
+        assert_eq!(expected, actual);
+        let expected = "rnbqkbnr/pp1ppppp/8/2p5/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2";
+        let actual = Board::from_fen(&expected).to_fen();
+        assert_eq!(expected, actual);
     }
 }

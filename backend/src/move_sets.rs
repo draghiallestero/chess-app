@@ -1,3 +1,5 @@
+use crate::en_passant::EnPassant;
+
 use std::{sync::LazyLock, thread::current};
 
 use arrayvec::ArrayVec;
@@ -39,7 +41,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
 
     // Process each direction
     for pos in 0u8..64u8 {
-        let current_target_pos_lists = &mut target_pos_lists_2d[pos as usize];
+        let current_pos_lists = &mut target_pos_lists_2d[pos as usize];
         let (rank, file) = (pos / 8, pos % 8);
 
         let mut current_rank;
@@ -53,8 +55,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             current_direction = 0;
             while current_file > 0 {
                 current_file -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
             // East
             current_rank = rank;
@@ -62,8 +63,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             current_direction += 1;
             while current_file < 7 {
                 current_file += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
             // North
             current_rank = rank;
@@ -71,8 +71,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             current_direction += 1;
             while current_rank < 7 {
                 current_rank += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
             // South
             current_rank = rank;
@@ -80,8 +79,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             current_direction += 1;
             while current_rank > 0 {
                 current_rank -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
         }
         if diagonals {
@@ -92,8 +90,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             while current_rank > 0 && current_file > 0 {
                 current_rank -= 1;
                 current_file -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
             // South-east
             current_rank = rank;
@@ -102,8 +99,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             while current_rank > 0 && current_file < 7 {
                 current_rank -= 1;
                 current_file += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
             // North-east
             current_rank = rank;
@@ -112,8 +108,7 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             while current_rank < 7 && current_file < 7 {
                 current_rank += 1;
                 current_file += 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
             // North-west
             current_rank = rank;
@@ -122,12 +117,68 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
             while current_rank < 7 && current_file > 0 {
                 current_rank += 1;
                 current_file -= 1;
-                current_target_pos_lists[current_direction]
-                    .push(to_pos(current_rank, current_file));
+                current_pos_lists[current_direction].push(to_pos(current_rank, current_file));
             }
         }
     }
 }
+
+// Pawns can move forward one or two pieces
+pub static PAWN_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 2>; 64]> = LazyLock::new(|| {
+    let to_pos = |rank, file| 8 * rank + file;
+
+    let mut target_pos_lists_2d = std::array::from_fn(|_| ArrayVec::<u8, 2>::new());
+    for pos in 8u8..56u8 {
+        let current_pos_list = &mut target_pos_lists_2d[pos as usize];
+        let (rank, file) = (pos / 8, pos % 8);
+
+        current_pos_list.push(to_pos(rank + 1, file));
+        if rank == 1 {
+            current_pos_list.push(to_pos(rank + 2, file));
+        }
+    }
+    target_pos_lists_2d
+});
+
+// Pawns can attack diagonally forward
+pub static PAWN_ATTACK_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 2>; 64]> = LazyLock::new(|| {
+    let to_pos = |rank, file| 8 * rank + file;
+
+    let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 2>::new());
+    for pos in 8u8..56u8 {
+        let current_pos_list = &mut target_pos_lists[pos as usize];
+        let (rank, file) = (pos / 8, pos % 8);
+
+        if file > 0 {
+            current_pos_list.push(to_pos(rank + 1, file - 1));
+        }
+        if file < 7 {
+            current_pos_list.push(to_pos(rank + 1, file + 1));
+        }
+    }
+    target_pos_lists
+});
+
+// En passant
+pub static EN_PASSANT_LISTS: LazyLock<[EnPassant; 64]> = LazyLock::new(|| {
+    let to_pos = |rank, file| 8 * rank + file;
+
+    let mut en_passant_list = std::array::from_fn(|_| EnPassant::default());
+    for pos in 8u8..16u8 {
+        let current_en_passant = &mut en_passant_list[pos as usize];
+        let (rank, file) = (pos / 8, pos % 8);
+
+        // Attacker positions are adjacent to the player target position
+        current_en_passant.target_pos = 63 - to_pos(rank + 1, file);
+        if file > 0 {
+            current_en_passant.attacker_pos_list[0] = 63 - to_pos(rank + 2, file - 1);
+        }
+        if file < 7 {
+            current_en_passant.attacker_pos_list[1] = 63 - to_pos(rank + 2, file + 1);
+        }
+    }
+    en_passant_list
+});
 
 // Rooks can slide along the cardinal directions
 pub static ROOK_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 4]; 64]> = LazyLock::new(|| {
@@ -143,7 +194,7 @@ pub static KNIGHT_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLoc
 
     let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 8>::new());
     for pos in 0u8..64u8 {
-        let current_target_pos_list = &mut target_pos_lists[pos as usize];
+        let current_pos_list = &mut target_pos_lists[pos as usize];
         let (rank, file) = (pos / 8, pos % 8);
 
         // Constraints
@@ -154,35 +205,35 @@ pub static KNIGHT_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLoc
 
         // West-south-west corner
         if ranks_from_bottom >= 1 && files_from_left >= 2 {
-            current_target_pos_list.push(to_pos(rank - 1, file - 2));
+            current_pos_list.push(to_pos(rank - 1, file - 2));
         }
         // South-south-west corner
         if ranks_from_bottom >= 2 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank - 2, file - 1));
+            current_pos_list.push(to_pos(rank - 2, file - 1));
         }
         // South-south-east corner
         if ranks_from_bottom >= 2 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank - 2, file + 1));
+            current_pos_list.push(to_pos(rank - 2, file + 1));
         }
         // East-south-east corner
         if ranks_from_bottom >= 1 && files_from_right >= 2 {
-            current_target_pos_list.push(to_pos(rank - 1, file + 2));
+            current_pos_list.push(to_pos(rank - 1, file + 2));
         }
         // East-north-east corner
         if ranks_from_top >= 1 && files_from_right >= 2 {
-            current_target_pos_list.push(to_pos(rank + 1, file + 2));
+            current_pos_list.push(to_pos(rank + 1, file + 2));
         }
         // North-north-east corner
         if ranks_from_top >= 2 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank + 2, file + 1));
+            current_pos_list.push(to_pos(rank + 2, file + 1));
         }
         // North-north-west corner
         if ranks_from_top >= 2 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank + 2, file - 1));
+            current_pos_list.push(to_pos(rank + 2, file - 1));
         }
         // West-north-west corner
         if ranks_from_top >= 1 && files_from_left >= 2 {
-            current_target_pos_list.push(to_pos(rank + 1, file - 2));
+            current_pos_list.push(to_pos(rank + 1, file - 2));
         }
     }
     target_pos_lists
@@ -210,7 +261,7 @@ pub static KING_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock:
 
     let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 8>::new());
     for pos in 0u8..64u8 {
-        let current_target_pos_list = &mut target_pos_lists[pos as usize];
+        let current_pos_list = &mut target_pos_lists[pos as usize];
         let (rank, file) = (pos / 8, pos % 8);
 
         // Constraints
@@ -221,35 +272,35 @@ pub static KING_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock:
 
         // West
         if files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank, file - 1));
+            current_pos_list.push(to_pos(rank, file - 1));
         }
         // South-west
         if ranks_from_bottom >= 1 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank - 1, file - 1));
+            current_pos_list.push(to_pos(rank - 1, file - 1));
         }
         // South
         if ranks_from_bottom >= 1 {
-            current_target_pos_list.push(to_pos(rank - 1, file));
+            current_pos_list.push(to_pos(rank - 1, file));
         }
         // South-east
         if ranks_from_bottom >= 1 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank - 1, file + 1));
+            current_pos_list.push(to_pos(rank - 1, file + 1));
         }
         // East
         if files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank, file + 1));
+            current_pos_list.push(to_pos(rank, file + 1));
         }
         // North-east
         if ranks_from_top >= 1 && files_from_right >= 1 {
-            current_target_pos_list.push(to_pos(rank + 1, file + 1));
+            current_pos_list.push(to_pos(rank + 1, file + 1));
         }
         // North
         if ranks_from_top >= 1 {
-            current_target_pos_list.push(to_pos(rank + 1, file));
+            current_pos_list.push(to_pos(rank + 1, file));
         }
         // North-West
         if ranks_from_top >= 1 && files_from_left >= 1 {
-            current_target_pos_list.push(to_pos(rank + 1, file - 1));
+            current_pos_list.push(to_pos(rank + 1, file - 1));
         }
     }
     target_pos_lists
