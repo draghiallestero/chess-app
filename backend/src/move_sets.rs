@@ -129,42 +129,6 @@ fn generate_sliding_piece_target_pos_lists_2d<const DIRECTIONS: usize>(
     }
 }
 
-// Pawns can move forward one or two pieces
-pub static PAWN_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 2>; 64]> = LazyLock::new(|| {
-    let to_pos = |rank, file| 8 * rank + file;
-
-    let mut target_pos_lists_2d = std::array::from_fn(|_| ArrayVec::<u8, 2>::new());
-    for pos in 8u8..56u8 {
-        let current_target_pos_list = &mut target_pos_lists_2d[pos as usize];
-        let (rank, file) = (pos / 8, pos % 8);
-
-        current_target_pos_list.push(to_pos(rank + 1, file));
-        if rank == 1 {
-            current_target_pos_list.push(to_pos(rank + 2, file));
-        }
-    }
-    target_pos_lists_2d
-});
-
-// Pawns can attack diagonally forward
-pub static PAWN_ATTACK_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 2>; 64]> = LazyLock::new(|| {
-    let to_pos = |rank, file| 8 * rank + file;
-
-    let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 2>::new());
-    for pos in 8u8..56u8 {
-        let current_target_pos_list = &mut target_pos_lists[pos as usize];
-        let (rank, file) = (pos / 8, pos % 8);
-
-        if file > 0 {
-            current_target_pos_list.push(to_pos(rank + 1, file - 1));
-        }
-        if file < 7 {
-            current_target_pos_list.push(to_pos(rank + 1, file + 1));
-        }
-    }
-    target_pos_lists
-});
-
 // Rooks can slide along the cardinal directions
 pub static ROOK_TARGET_POS_LISTS_2D: LazyLock<[[ArrayVec<u8, 7>; 4]; 64]> = LazyLock::new(|| {
     let mut target_pos_lists_2d: [[ArrayVec<u8, 7>; 4]; 64] =

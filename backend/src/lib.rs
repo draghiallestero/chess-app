@@ -19,8 +19,8 @@ use bit_iter::BitIter;
 use crate::{
     move_sets::{
         BISHOP_TARGET_POS_LISTS_2D, KING_TARGET_POS_LISTS_2D, KNIGHT_TARGET_POS_LISTS_2D,
-        PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D,
-        ROOK_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars, to_pos,
+        QUEEN_TARGET_POS_LISTS_2D, ROOK_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars,
+        to_pos,
     },
     piece_square_tables::{
         MIDGAME_BISHOPS, MIDGAME_KINGS, MIDGAME_KNIGHTS, MIDGAME_QUEENS, MIDGAME_ROOKS,
@@ -260,96 +260,104 @@ impl Board {
         let occupied_squares = player_occupied_squares | opponent_occupied_squares;
 
         // Pawns
+        let mut try_add_pawn_move = |pos, target_pos, mut new_board: Board| {
+            let (target_rank, _) = from_pos(target_pos);
+            // Promotion
+            if target_rank == 7 {
+                new_board.player.remove_piece(Piece::Pawns, target_pos);
+                // Queen promotion goes first as the "preferred" player choice
+                new_board.player.add_piece(Piece::Queens, target_pos);
+                try_add_move(pos, target_pos, new_board);
+                new_board.player.remove_piece(Piece::Queens, target_pos);
+                // Rook
+                new_board.player.add_piece(Piece::Rooks, target_pos);
+                try_add_move(pos, target_pos, new_board);
+                new_board.player.remove_piece(Piece::Rooks, target_pos);
+                // Knight
+                new_board.player.add_piece(Piece::Knights, target_pos);
+                try_add_move(pos, target_pos, new_board);
+                new_board.player.remove_piece(Piece::Knights, target_pos);
+                // Bishop
+                new_board.player.add_piece(Piece::Bishops, target_pos);
+                try_add_move(pos, target_pos, new_board);
+            } else {
+                try_add_move(pos, target_pos, new_board);
+            }
+        };
         for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
             let (rank, file) = from_pos(pos);
-
-            // Move
-            let target_pos_list = &PAWN_TARGET_POS_LISTS_2D[pos as usize];
-            for target_pos in target_pos_list {
-                let (target_rank, _) = from_pos(*target_pos);
-                let target_pos_free = !occupied_squares.get(*target_pos);
-                if target_pos_free {
-                    let mut new_board = self.new_move_board();
-                    new_board.player.move_piece(Piece::Pawns, pos, *target_pos);
-                    // En passant
-                    if rank == 1 && target_rank == 3 {
-                        // En passant is stored as if from the other point-of-view
-                        new_board.en_passant_target_pos = Some(63 - to_pos(rank + 1, file));
-                    }
-                    // Promotion
-                    if rank == 6 {
-                        new_board.player.remove_piece(Piece::Pawns, *target_pos);
-                        // Queen promotion goes first as the "preferred" player choice
-                        new_board.player.add_piece(Piece::Queens, *target_pos);
-                        try_add_move(pos, *target_pos, new_board);
-                        // Rook
-                        new_board.player.remove_piece(Piece::Queens, *target_pos);
-                        new_board.player.add_piece(Piece::Rooks, *target_pos);
-                        try_add_move(pos, *target_pos, new_board);
-                        // Knight
-                        new_board.player.remove_piece(Piece::Rooks, *target_pos);
-                        new_board.player.add_piece(Piece::Knights, *target_pos);
-                        try_add_move(pos, *target_pos, new_board);
-                        // Bishop
-                        new_board.player.remove_piece(Piece::Knights, *target_pos);
-                        new_board.player.add_piece(Piece::Bishops, *target_pos);
-                        try_add_move(pos, *target_pos, new_board);
-                    } else {
-                        try_add_move(pos, *target_pos, new_board);
-                    }
-                } else {
-                    break;
-                }
+            if rank == 7 {
+                continue;
             }
 
-            // Attack
-            let attack_pos_list = &PAWN_ATTACK_POS_LISTS_2D[pos as usize];
-            for attack_pos in attack_pos_list {
-                let attack_pos_occupied = opponent_occupied_squares.get(*attack_pos);
-                if attack_pos_occupied {
-                    let mut new_board = self.new_move_board();
-                    new_board.player.move_piece(Piece::Pawns, pos, *attack_pos);
-                    remove_attacked_piece(&mut new_board, *attack_pos);
-                    // Promotion
-                    if rank == 6 {
-                        new_board.player.remove_piece(Piece::Pawns, *attack_pos);
-                        // Queen promotion goes first as the "preferred" player choice
-                        new_board.player.add_piece(Piece::Queens, *attack_pos);
-                        try_add_move(pos, *attack_pos, new_board);
-                        // Rook
-                        new_board.player.remove_piece(Piece::Queens, *attack_pos);
-                        new_board.player.add_piece(Piece::Rooks, *attack_pos);
-                        try_add_move(pos, *attack_pos, new_board);
-                        // Knight
-                        new_board.player.remove_piece(Piece::Rooks, *attack_pos);
-                        new_board.player.add_piece(Piece::Knights, *attack_pos);
-                        try_add_move(pos, *attack_pos, new_board);
-                        // Bishop
-                        new_board.player.remove_piece(Piece::Knights, *attack_pos);
-                        new_board.player.add_piece(Piece::Bishops, *attack_pos);
-                        try_add_move(pos, *attack_pos, new_board);
-                    } else {
-                        try_add_move(pos, *attack_pos, new_board);
+            // Pawns can only move forward
+            let target_pos = to_pos(rank + 1, file);
+            let target_pos_free = !occupied_squares.get(target_pos);
+            if target_pos_free {
+                let mut new_board = self.new_move_board();
+                new_board.player.move_piece(Piece::Pawns, pos, target_pos);
+                try_add_pawn_move(pos, target_pos, new_board);
+                // Double push
+                if rank == 1 {
+                    let en_passant_target_pos = to_pos(2, file);
+                    let target_pos = to_pos(3, file);
+                    let target_pos_free = !occupied_squares.get(target_pos);
+                    if target_pos_free {
+                        let mut new_board = self.new_move_board();
+                        new_board.player.move_piece(Piece::Pawns, pos, target_pos);
+                        // En passant attacks can be done by the opponent only after a player's double push
+                        // En passant is always stored as if from the player PoV
+                        new_board.en_passant_target_pos = if self.halfmove_count % 2 == 0 {
+                            Some(en_passant_target_pos)
+                        } else {
+                            Some(63 - en_passant_target_pos)
+                        };
+                        try_add_pawn_move(pos, target_pos, new_board);
                     }
                 }
             }
 
-            // Attack En passant
-            if rank == 4 {
-                match self.en_passant_target_pos {
-                    Some(en_passant_target_pos) => {
-                        let (en_passant_rank, en_passant_file) = from_pos(en_passant_target_pos);
-                        let attack_pos = to_pos(en_passant_rank - 1, en_passant_file);
-                        if file.wrapping_sub(1) == en_passant_file || file + 1 == en_passant_file {
-                            let mut new_board = self.new_move_board();
-                            new_board
-                                .player
-                                .move_piece(Piece::Pawns, pos, en_passant_target_pos);
-                            new_board.opponent.remove_any_piece(attack_pos);
-                            try_add_move(pos, en_passant_target_pos, new_board);
+            // Pawns can attack diagonally
+            {
+                let mut try_attack = |attack_rank, attack_file| {
+                    let attack_pos = to_pos(attack_rank, attack_file);
+                    let attack_pos_occupied = opponent_occupied_squares.get(attack_pos);
+                    if attack_pos_occupied {
+                        let mut new_board = self.new_move_board();
+                        new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
+                        remove_attacked_piece(&mut new_board, attack_pos);
+                        try_add_pawn_move(pos, attack_pos, new_board);
+                    } else {
+                        let attack_pos_free = !occupied_squares.get(attack_pos);
+                        if attack_pos_free && attack_rank == 5 {
+                            // En passant attacks remove the pawn adjacent to the pawn's source position
+                            match self.en_passant_target_pos {
+                                Some(en_passant_target_pos) => {
+                                    // En passant is always stored as if from the player PoV
+                                    let en_passant_target_pos = if self.halfmove_count % 2 == 0 {
+                                        en_passant_target_pos
+                                    } else {
+                                        63 - en_passant_target_pos
+                                    };
+                                    if en_passant_target_pos == attack_pos {
+                                        let mut new_board = self.new_move_board();
+                                        new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
+                                        new_board
+                                            .opponent
+                                            .remove_any_piece(to_pos(attack_rank - 1, attack_file));
+                                        try_add_pawn_move(pos, attack_pos, new_board);
+                                    }
+                                }
+                                None => (),
+                            }
                         }
                     }
-                    None => (),
+                };
+                if file > 0 {
+                    try_attack(rank + 1, file - 1);
+                }
+                if file < 7 {
+                    try_attack(rank + 1, file + 1);
                 }
             }
         }
@@ -1258,7 +1266,10 @@ mod tests {
             perft_for_depth(board, 0, 5, &mut moves_array, false),
             4865609
         );
-        // assert_eq!(perft_for_depth(board, 0, 6, &mut moves_array, true), 119060324);
+        assert_eq!(
+            perft_for_depth(board, 0, 6, &mut moves_array, true),
+            119060324
+        );
 
         // Position 2
         let board =
