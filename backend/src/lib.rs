@@ -1,31 +1,21 @@
 pub mod bitboard;
 mod board;
-pub mod en_passant;
+mod en_passant;
 pub mod move_sets;
-pub mod piece_square_tables;
+mod piece;
+mod piece_square_tables;
 pub use bitboard::BitBoard;
 use piece_square_tables::MIDGAME_PAWNS;
-use std::{
-    cell::RefCell,
-    cmp::{Ordering, max, max_by, min},
-    fs::OpenOptions,
-    iter::StepBy,
-    ops::{Neg, Not, Range},
-    sync::LazyLock,
-    thread::current,
-};
+use std::cmp::max;
 
-use arrayvec::ArrayVec;
 use bit_iter::BitIter;
 
 use crate::{
     en_passant::EnPassant,
     move_sets::{
-        BISHOP_TARGET_POS_LISTS_2D, EN_PASSANT_LISTS, KING_TARGET_POS_LISTS_2D,
-        KNIGHT_TARGET_POS_LISTS_2D, PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D,
-        QUEEN_TARGET_POS_LISTS_2D, ROOK_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars,
-        to_pos,
+        EN_PASSANT_LISTS, KNIGHT_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars, to_pos,
     },
+    piece::Piece,
     piece_square_tables::{
         MIDGAME_BISHOPS, MIDGAME_KINGS, MIDGAME_KNIGHTS, MIDGAME_QUEENS, MIDGAME_ROOKS,
     },
@@ -38,16 +28,6 @@ enum CastlingStatus {
     KingSideAvailable,
     QueenSideAvailable,
     Unavailable,
-}
-
-#[derive(Clone, Copy)]
-enum Piece {
-    Pawns,
-    Rooks,
-    Knights,
-    Bishops,
-    Queens,
-    Kings,
 }
 
 #[derive(Default, Clone, Copy)]

@@ -1,28 +1,15 @@
-use std::{
-    cell::RefCell,
-    cmp::{Ordering, max, max_by, min},
-    fs::OpenOptions,
-    iter::StepBy,
-    ops::{Neg, Not, Range},
-    sync::LazyLock,
-    thread::current,
-};
+use std::cell::RefCell;
 
-use arrayvec::ArrayVec;
 use bit_iter::BitIter;
 
 use crate::{
-    BitBoard, Board, CastlingStatus, Move, Piece,
-    en_passant::EnPassant,
+    BitBoard, Board, CastlingStatus, Move,
     move_sets::{
         BISHOP_TARGET_POS_LISTS_2D, EN_PASSANT_LISTS, KING_TARGET_POS_LISTS_2D,
-        KNIGHT_TARGET_POS_LISTS_2D, PAWN_ATTACK_POS_LISTS_2D, PAWN_TARGET_POS_LISTS_2D,
-        QUEEN_TARGET_POS_LISTS_2D, ROOK_TARGET_POS_LISTS_2D, from_chars, from_pos, to_chars,
+        KNIGHT_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D, ROOK_TARGET_POS_LISTS_2D, from_pos,
         to_pos,
     },
-    piece_square_tables::{
-        MIDGAME_BISHOPS, MIDGAME_KINGS, MIDGAME_KNIGHTS, MIDGAME_QUEENS, MIDGAME_ROOKS,
-    },
+    piece::Piece,
 };
 
 struct Shared {

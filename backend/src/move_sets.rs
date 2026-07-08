@@ -1,6 +1,6 @@
 use crate::en_passant::EnPassant;
 
-use std::{sync::LazyLock, thread::current};
+use std::sync::LazyLock;
 
 use arrayvec::ArrayVec;
 

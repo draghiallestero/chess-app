@@ -1,40 +1,19 @@
-use std::alloc::dealloc;
-use std::mem::swap;
-
 use backend::BitBoard;
 use backend::Board;
 use backend::Move;
 use backend::move_sets::to_chars;
-use backend::move_sets::to_pos;
-use bit_iter::BitIter;
 use iced::Background;
 use iced::Border;
-use iced::Event;
 use iced::Point;
-use iced::Program;
 use iced::Size;
-use iced::Subscription;
 use iced::Theme;
 use iced::Vector;
 use iced::color;
-use iced::debug;
-use iced::event;
-use iced::mouse;
-use iced::theme;
 use iced::widget::MouseArea;
-use iced::widget::Text;
 use iced::widget::container::Style;
 use iced::widget::float;
 use iced::widget::mouse_area;
-use iced::widget::pane_grid::default;
-use iced::widget::pin;
-use iced::widget::row;
-use iced::widget::{
-    Column, Container, Grid, Stack, button, center, column, container, grid, stack, text, themer,
-};
-use iced::window;
-use iced::window::Position;
-use iced::window::Settings;
+use iced::widget::{center, container, grid, stack, text};
 
 struct BoardWidget {
     board: Board,
@@ -158,7 +137,7 @@ impl BoardWidget {
             })
             .size(text_size),
         ))
-        .translate(move |r1, r2| Vector {
+        .translate(move |r1, _| Vector {
             x: self.mouse_pos.x - r1.width / 2.0,
             y: self.mouse_pos.y - r1.height / 2.0,
         });
