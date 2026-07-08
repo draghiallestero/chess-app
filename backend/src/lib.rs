@@ -816,7 +816,7 @@ impl Board {
         player_score - oppponent_score
     }
 
-    pub fn search_for_best_move(&self, max_depth: i32) -> Option<Move> {
+    pub fn search_for_best_move(&self, max_depth: usize) -> Option<Move> {
         let moves = {
             let mut moves = Vec::default();
             self.generate_legal_moves(&mut moves);
@@ -826,12 +826,16 @@ impl Board {
             return None;
         }
         let mut best_move = Some(moves[0]);
+
+        let mut next_depth_moves_vec = vec![Vec::default(); max_depth - 1];
         let mut alpha = i16::MIN + 1;
         let beta = i16::MAX - 1;
         for _move in moves {
-            let alpha_candidate = -_move
-                .board
-                .search_for_best_move_impl(1, max_depth, -beta, -alpha);
+            let alpha_candidate = -_move.board.search_for_best_move_impl(
+                next_depth_moves_vec.as_mut_slice(),
+                -beta,
+                -alpha,
+            );
             if alpha_candidate > alpha {
                 alpha = alpha_candidate;
                 best_move = Some(_move);
@@ -842,20 +846,16 @@ impl Board {
 
     pub fn search_for_best_move_impl(
         &self,
-        depth: i32,
-        max_depth: i32,
+        moves_slice: &mut [Vec<Move>],
         alpha: i16,
         beta: i16,
     ) -> i16 {
-        if depth == max_depth {
+        if moves_slice.is_empty() {
             return self.evaluate_position();
         }
 
-        let moves = {
-            let mut moves = Vec::default();
-            self.generate_legal_moves(&mut moves);
-            moves
-        };
+        let (mut moves, mut moves_slice_split) = moves_slice.split_first_mut().unwrap();
+        self.generate_legal_moves(&mut moves);
 
         if moves.is_empty() {
             return self.evaluate_position();
@@ -866,7 +866,7 @@ impl Board {
             let alpha_candidate =
                 -_move
                     .board
-                    .search_for_best_move_impl(depth + 1, max_depth, -beta, -alpha);
+                    .search_for_best_move_impl(&mut moves_slice_split, -beta, -alpha);
             alpha = max(alpha, alpha_candidate);
         }
 
