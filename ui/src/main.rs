@@ -280,7 +280,7 @@ impl BoardWidget {
                         // self.board.halfmove_count += 1;
                         // self.board.generate_legal_moves(&mut self.legal_moves);
 
-                        match self.board.search_for_best_move(3) {
+                        match self.board.search_for_best_move(5) {
                             Some(_move) => {
                                 println!(
                                     "{} best move: {} to {}",
@@ -296,24 +296,24 @@ impl BoardWidget {
                             None => (),
                         }
                     }
-                    None => match self.board.search_for_best_move(3) {
-                        Some(_move) => {
-                            println!(
-                                "{} best move: {} to {}",
-                                if self.board.halfmove_count % 2 == 0 {
-                                    "White"
-                                } else {
-                                    "Black"
-                                },
-                                to_chars(_move.from),
-                                to_chars(_move.to)
-                            );
+                    None => (), // match self.board.search_for_best_move(3) {
+                                // Some(_move) => {
+                                //     println!(
+                                //         "{} best move: {} to {}",
+                                //         if self.board.halfmove_count % 2 == 0 {
+                                //             "White"
+                                //         } else {
+                                //             "Black"
+                                //         },
+                                //         to_chars(_move.from),
+                                //         to_chars(_move.to)
+                                //     );
 
-                            self.board = _move.board;
-                            self.board.generate_legal_moves(&mut self.legal_moves);
-                        }
-                        None => (),
-                    },
+                                //     self.board = _move.board;
+                                //     self.board.generate_legal_moves(&mut self.legal_moves);
+                                // }
+                                // None => (),
+                                // },
                 };
                 self.held_piece_pos = None;
             }
