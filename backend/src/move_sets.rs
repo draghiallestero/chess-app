@@ -414,13 +414,14 @@ pub static EN_PASSANT_LISTS: LazyLock<[EnPassant; 64]> = LazyLock::new(|| {
 });
 
 // Knights can move over two squares then one square, either first horizontally or first vertically
-pub static KNIGHT_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(|| {
+pub static KNIGHT_BITBOARDS: LazyLock<[BitBoard; 64]> = LazyLock::new(|| {
     let to_pos = |rank, file| 8 * rank + file;
 
-    let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 8>::new());
+    let mut bitboards: [BitBoard; 64] = from_fn(|_| BitBoard::default());
     for pos in 0u8..64u8 {
-        let current_pos_list = &mut target_pos_lists[pos as usize];
         let (rank, file) = (pos / 8, pos % 8);
+
+        let mut bitboard = BitBoard::default();
 
         // Constraints
         let ranks_from_top = 7 - rank;
@@ -430,38 +431,40 @@ pub static KNIGHT_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLoc
 
         // West-south-west corner
         if ranks_from_bottom >= 1 && files_from_left >= 2 {
-            current_pos_list.push(to_pos(rank - 1, file - 2));
+            bitboard.set(to_pos(rank - 1, file - 2));
         }
         // South-south-west corner
         if ranks_from_bottom >= 2 && files_from_left >= 1 {
-            current_pos_list.push(to_pos(rank - 2, file - 1));
+            bitboard.set(to_pos(rank - 2, file - 1));
         }
         // South-south-east corner
         if ranks_from_bottom >= 2 && files_from_right >= 1 {
-            current_pos_list.push(to_pos(rank - 2, file + 1));
+            bitboard.set(to_pos(rank - 2, file + 1));
         }
         // East-south-east corner
         if ranks_from_bottom >= 1 && files_from_right >= 2 {
-            current_pos_list.push(to_pos(rank - 1, file + 2));
+            bitboard.set(to_pos(rank - 1, file + 2));
         }
         // East-north-east corner
         if ranks_from_top >= 1 && files_from_right >= 2 {
-            current_pos_list.push(to_pos(rank + 1, file + 2));
+            bitboard.set(to_pos(rank + 1, file + 2));
         }
         // North-north-east corner
         if ranks_from_top >= 2 && files_from_right >= 1 {
-            current_pos_list.push(to_pos(rank + 2, file + 1));
+            bitboard.set(to_pos(rank + 2, file + 1));
         }
         // North-north-west corner
         if ranks_from_top >= 2 && files_from_left >= 1 {
-            current_pos_list.push(to_pos(rank + 2, file - 1));
+            bitboard.set(to_pos(rank + 2, file - 1));
         }
         // West-north-west corner
         if ranks_from_top >= 1 && files_from_left >= 2 {
-            current_pos_list.push(to_pos(rank + 1, file - 2));
+            bitboard.set(to_pos(rank + 1, file - 2));
         }
+
+        bitboards[pos as usize] = bitboard;
     }
-    target_pos_lists
+    bitboards
 });
 
 // Rooks can slide along the cardinal directions

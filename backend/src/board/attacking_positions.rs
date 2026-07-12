@@ -1,6 +1,8 @@
+use bit_iter::BitIter;
+
 use crate::{
     Board,
-    move_sets::{KNIGHT_TARGET_POS_LISTS_2D, from_pos, to_pos},
+    move_sets::{KNIGHT_BITBOARDS, from_pos, to_pos},
 };
 
 impl Board {
@@ -213,12 +215,12 @@ impl Board {
         }
 
         // Knights
-        for current_pos in &KNIGHT_TARGET_POS_LISTS_2D[pos as usize] {
-            if self.opponent.knights.get(*current_pos) {
+        for current_pos in BitIter::from(KNIGHT_BITBOARDS[pos as usize].board).map(|x| x as u8) {
+            if self.opponent.knights.get(current_pos) {
                 if RETURN_EARLY {
                     return (attacking_positions, true);
                 }
-                attacking_positions.push(*current_pos);
+                attacking_positions.push(current_pos);
                 return (attacking_positions, true);
             }
         }

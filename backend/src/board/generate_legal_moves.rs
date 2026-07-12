@@ -5,8 +5,8 @@ use bit_iter::BitIter;
 use crate::{
     BitBoard, Board, CastlingStatus, Move,
     move_sets::{
-        BISHOP_MAGIC_BITBOARDS, EN_PASSANT_LISTS, KING_TARGET_POS_LISTS_2D,
-        KNIGHT_TARGET_POS_LISTS_2D, ROOK_MAGIC_BITBOARDS, from_pos, to_pos,
+        BISHOP_MAGIC_BITBOARDS, EN_PASSANT_LISTS, KING_TARGET_POS_LISTS_2D, KNIGHT_BITBOARDS,
+        ROOK_MAGIC_BITBOARDS, from_pos, to_pos,
     },
     piece::Piece,
 };
@@ -137,24 +137,25 @@ impl Board {
         } = &shared;
 
         for pos in BitIter::from(self.player.knights.board).map(|x| x as u8) {
-            let target_pos_list = &KNIGHT_TARGET_POS_LISTS_2D[pos as usize];
-            for target_pos in target_pos_list {
+            let attack_bitboard = KNIGHT_BITBOARDS[pos as usize];
+
+            // Move
+            for target_pos in
+                BitIter::from(attack_bitboard.board & !occupied_squares.board).map(|x| x as u8)
+            {
                 let mut new_board = self.new_move_board();
-                new_board
-                    .player
-                    .move_piece(Piece::Knights, pos, *target_pos);
-                let target_pos_free = !occupied_squares.get(*target_pos);
-                if target_pos_free {
-                    // Move
-                    Board::try_add_move(moves, pos, *target_pos, new_board);
-                } else {
-                    let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
-                    if attack_pos_occupied {
-                        // Attack
-                        Board::remove_attacked_piece(&mut new_board, *target_pos);
-                        Board::try_add_move(moves, pos, *target_pos, new_board);
-                    }
-                }
+                new_board.player.move_piece(Piece::Knights, pos, target_pos);
+                Board::try_add_move(moves, pos, target_pos, new_board);
+            }
+
+            // Attack
+            for attack_pos in BitIter::from(attack_bitboard.board & opponent_occupied_squares.board)
+                .map(|x| x as u8)
+            {
+                let mut new_board = self.new_move_board();
+                new_board.player.move_piece(Piece::Knights, pos, attack_pos);
+                Board::remove_attacked_piece(&mut new_board, attack_pos);
+                Board::try_add_move(moves, pos, attack_pos, new_board);
             }
         }
     }
