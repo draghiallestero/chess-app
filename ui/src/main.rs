@@ -280,7 +280,7 @@ impl BoardWidget {
                         // self.board.halfmove_count += 1;
                         // self.board.generate_legal_moves(&mut self.legal_moves);
 
-                        match self.board.search_for_best_move(5) {
+                        match self.board.search_for_best_move(1) {
                             Some(_move) => {
                                 println!(
                                     "{} best move: {} to {}",

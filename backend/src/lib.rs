@@ -12,6 +12,7 @@ use bit_iter::BitIter;
 
 use crate::{
     en_passant::EnPassant,
+    move_sets::{from_chars, to_chars},
     piece::Piece,
     piece_square_tables::{
         MIDGAME_BISHOPS, MIDGAME_KINGS, MIDGAME_KNIGHTS, MIDGAME_QUEENS, MIDGAME_ROOKS,

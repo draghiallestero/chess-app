@@ -1,7 +1,9 @@
 use std::ops::BitAnd;
 use std::ops::BitOr;
 
-#[derive(Default, Clone, Copy)]
+use bit_iter::BitIter;
+
+#[derive(Default, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
 pub struct BitBoard {
     pub board: u64,
 }
@@ -26,6 +28,9 @@ impl BitBoard {
         BitBoard {
             board: self.board.reverse_bits(),
         }
+    }
+    pub fn iter(&self) -> bit_iter::BitIter<u64> {
+        BitIter::from(self.board)
     }
 }
 
