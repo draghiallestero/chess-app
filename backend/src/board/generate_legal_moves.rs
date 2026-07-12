@@ -5,9 +5,9 @@ use bit_iter::BitIter;
 use crate::{
     BitBoard, Board, CastlingStatus, Move,
     move_sets::{
-        BISHOP_TARGET_POS_LISTS_2D, EN_PASSANT_LISTS, KING_TARGET_POS_LISTS_2D,
-        KNIGHT_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D, ROOK_MAGIC_BITBOARDS,
-        ROOK_TARGET_POS_LISTS_2D, from_pos, to_pos,
+        BISHOP_MAGIC_BITBOARDS, EN_PASSANT_LISTS, KING_TARGET_POS_LISTS_2D,
+        KNIGHT_TARGET_POS_LISTS_2D, QUEEN_TARGET_POS_LISTS_2D, ROOK_MAGIC_BITBOARDS, from_pos,
+        to_pos,
     },
     piece::Piece,
 };
@@ -205,14 +205,14 @@ impl Board {
             }
 
             // Attack
-            for target_pos in BitIter::from(attack_bitboard.board & opponent_occupied_squares.board)
+            for attack_pos in BitIter::from(attack_bitboard.board & opponent_occupied_squares.board)
                 .map(|x| x as u8)
             {
                 let mut new_board = self.new_move_board();
-                new_board.player.move_piece(Piece::Rooks, pos, target_pos);
-                Board::remove_attacked_piece(&mut new_board, target_pos);
+                new_board.player.move_piece(Piece::Rooks, pos, attack_pos);
+                Board::remove_attacked_piece(&mut new_board, attack_pos);
                 update_castling_status_when_rook_moves(pos, &mut new_board);
-                Board::try_add_move(moves, pos, target_pos, new_board);
+                Board::try_add_move(moves, pos, attack_pos, new_board);
             }
         }
     }
@@ -225,31 +225,26 @@ impl Board {
         } = &shared;
 
         for pos in BitIter::from(self.player.bishops.board).map(|x| x as u8) {
-            for direction in 0..4 {
-                let target_pos_list = &BISHOP_TARGET_POS_LISTS_2D[pos as usize];
-                for target_pos in &target_pos_list[direction] {
-                    let target_pos_free = !occupied_squares.get(*target_pos);
-                    if target_pos_free {
-                        // Move
-                        let mut new_board = self.new_move_board();
-                        new_board
-                            .player
-                            .move_piece(Piece::Bishops, pos, *target_pos);
-                        Board::try_add_move(moves, pos, *target_pos, new_board);
-                    } else {
-                        let attack_pos_occupied = opponent_occupied_squares.get(*target_pos);
-                        if attack_pos_occupied {
-                            // Attack
-                            let mut new_board = self.new_move_board();
-                            new_board
-                                .player
-                                .move_piece(Piece::Bishops, pos, *target_pos);
-                            Board::remove_attacked_piece(&mut new_board, *target_pos);
-                            Board::try_add_move(moves, pos, *target_pos, new_board);
-                        }
-                        break;
-                    }
-                }
+            let mg = &BISHOP_MAGIC_BITBOARDS[pos as usize];
+            let attack_bitboard = mg.get_attack_bitboard(*occupied_squares);
+
+            // Move
+            for target_pos in
+                BitIter::from(attack_bitboard.board & !occupied_squares.board).map(|x| x as u8)
+            {
+                let mut new_board = self.new_move_board();
+                new_board.player.move_piece(Piece::Bishops, pos, target_pos);
+                Board::try_add_move(moves, pos, target_pos, new_board);
+            }
+
+            // Attack
+            for attack_pos in BitIter::from(attack_bitboard.board & opponent_occupied_squares.board)
+                .map(|x| x as u8)
+            {
+                let mut new_board = self.new_move_board();
+                new_board.player.move_piece(Piece::Bishops, pos, attack_pos);
+                Board::remove_attacked_piece(&mut new_board, attack_pos);
+                Board::try_add_move(moves, pos, attack_pos, new_board);
             }
         }
     }
