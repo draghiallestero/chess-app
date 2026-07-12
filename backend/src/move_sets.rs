@@ -476,13 +476,15 @@ pub static BISHOP_MAGIC_BITBOARDS: LazyLock<[MagicBitboard; 64]> =
     LazyLock::new(|| generate_sliding_piece_magic_bitboards(false, true));
 
 // Kings can move one square in any direction
-pub static KING_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock::new(|| {
+pub static KING_BITBOARDS: LazyLock<[BitBoard; 64]> = LazyLock::new(|| {
     let to_pos = |rank, file| 8 * rank + file;
 
-    let mut target_pos_lists = std::array::from_fn(|_| ArrayVec::<u8, 8>::new());
+    let mut bitboards: [BitBoard; 64] = from_fn(|_| BitBoard::default());
+
     for pos in 0u8..64u8 {
-        let current_pos_list = &mut target_pos_lists[pos as usize];
         let (rank, file) = (pos / 8, pos % 8);
+
+        let mut bitboard = BitBoard::default();
 
         // Constraints
         let ranks_from_top = 7 - rank;
@@ -492,36 +494,39 @@ pub static KING_TARGET_POS_LISTS_2D: LazyLock<[ArrayVec<u8, 8>; 64]> = LazyLock:
 
         // West
         if files_from_left >= 1 {
-            current_pos_list.push(to_pos(rank, file - 1));
+            bitboard.set(to_pos(rank, file - 1));
         }
         // South-west
         if ranks_from_bottom >= 1 && files_from_left >= 1 {
-            current_pos_list.push(to_pos(rank - 1, file - 1));
+            bitboard.set(to_pos(rank - 1, file - 1));
         }
         // South
         if ranks_from_bottom >= 1 {
-            current_pos_list.push(to_pos(rank - 1, file));
+            bitboard.set(to_pos(rank - 1, file));
         }
         // South-east
         if ranks_from_bottom >= 1 && files_from_right >= 1 {
-            current_pos_list.push(to_pos(rank - 1, file + 1));
+            bitboard.set(to_pos(rank - 1, file + 1));
         }
         // East
         if files_from_right >= 1 {
-            current_pos_list.push(to_pos(rank, file + 1));
+            bitboard.set(to_pos(rank, file + 1));
         }
         // North-east
         if ranks_from_top >= 1 && files_from_right >= 1 {
-            current_pos_list.push(to_pos(rank + 1, file + 1));
+            bitboard.set(to_pos(rank + 1, file + 1));
         }
         // North
         if ranks_from_top >= 1 {
-            current_pos_list.push(to_pos(rank + 1, file));
+            bitboard.set(to_pos(rank + 1, file));
         }
         // North-West
         if ranks_from_top >= 1 && files_from_left >= 1 {
-            current_pos_list.push(to_pos(rank + 1, file - 1));
+            bitboard.set(to_pos(rank + 1, file - 1));
         }
+
+        bitboards[pos as usize] = bitboard;
     }
-    target_pos_lists
+
+    bitboards
 });
