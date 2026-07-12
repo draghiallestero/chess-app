@@ -222,14 +222,7 @@ impl Board {
     fn is_king_in_check(&self) -> bool {
         let pos = BitIter::from(self.player.kings.board).next().unwrap() as u8;
 
-        if self.get_attacking_positions::<true>(pos).0.len() != 0 {
-            println!(
-                "squares attacking king: {:?}",
-                self.get_attacking_positions::<true>(pos).0
-            );
-        }
-
-        return self.get_attacking_positions::<true>(pos).1;
+        return self.is_position_attacked(pos);
     }
 
     pub fn evaluate_position(&self) -> i16 {
