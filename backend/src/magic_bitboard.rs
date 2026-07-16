@@ -60,17 +60,17 @@ impl MagicBitboard {
         let mut rng = rand::rngs::StdRng::from_seed([10; 32]);
         // let mut rng = rand::rng();
 
-        let mut mgs: [MagicBitboard; 64] = from_fn(|_| MagicBitboard::default());
+        let mut mbs: [MagicBitboard; 64] = from_fn(|_| MagicBitboard::default());
 
         for pos in 0u8..64u8 {
             let (rank, file) = from_pos(pos);
 
             let add_delta = |x, delta: &i8| ((x as i8).wrapping_add(*delta)) as u8;
 
-            let mut mg: MagicBitboard = MagicBitboard::default();
+            let mut mb: MagicBitboard = MagicBitboard::default();
 
             // Find blocker bitboards
-            mg.blocker_bitboard = {
+            mb.blocker_bitboard = {
                 let mut blocker_bitboard = BitBoard::default();
                 for ((rank_delta, file_delta), (rank_limit, file_limit)) in
                     deltas.iter().zip(limits.iter())
@@ -93,7 +93,7 @@ impl MagicBitboard {
             // Find blocker combination bitboards
             let blocker_combination_bitboards = {
                 let mut blocker_combination_bitboards = Vec::default();
-                for active_blocker_positions in mg
+                for active_blocker_positions in mb
                     .blocker_bitboard
                     .iter()
                     .map(|x| vec![None, Some(x)])
@@ -141,12 +141,12 @@ impl MagicBitboard {
                 let generate_random_numbers = false;
                 if generate_random_numbers {
                     let mut new_random = || -> u64 { rng.random() };
-                    mg.magic_number = new_random();
-                    mg.magic_number &= new_random();
+                    mb.magic_number = new_random();
+                    mb.magic_number &= new_random();
 
                     // Need a small number of bits, otherwise conflicts are more likely
-                    // if mg.magic_number.count_ones() < 4 || mg.magic_number.count_ones() > 8 {
-                    if mg.magic_number.count_ones() > 8 {
+                    // if mb.magic_number.count_ones() < 4 || mb.magic_number.count_ones() > 8 {
+                    if mb.magic_number.count_ones() > 8 {
                         continue;
                     }
                 } else {
@@ -218,7 +218,7 @@ impl MagicBitboard {
                             622804879364,
                             26526800217090,
                         ];
-                        mg.magic_number = MAGIC_NUMBERS[pos as usize];
+                        mb.magic_number = MAGIC_NUMBERS[pos as usize];
                     }
                     if diagonals {
                         const MAGIC_NUMBERS: [u64; 64] = [
@@ -287,7 +287,7 @@ impl MagicBitboard {
                             17875687707648,
                             1191204369186553984,
                         ];
-                        mg.magic_number = MAGIC_NUMBERS[pos as usize];
+                        mb.magic_number = MAGIC_NUMBERS[pos as usize];
                     }
                 }
 
@@ -299,8 +299,8 @@ impl MagicBitboard {
                 {
                     let index = blocker_combination_bitboard
                         .board
-                        .wrapping_mul(mg.magic_number)
-                        >> (64 - mg.blocker_bitboard.count());
+                        .wrapping_mul(mb.magic_number)
+                        >> (64 - mb.blocker_bitboard.count());
                     match index_to_attack_bitboard.insert(index, *attack_bitboard) {
                         Some(present_attack_bitboard) => {
                             if present_attack_bitboard.board != attack_bitboard.board {
@@ -312,20 +312,20 @@ impl MagicBitboard {
                 }
 
                 // Fill in attack bitboards
-                mg.attack_bitboards.resize(
+                mb.attack_bitboards.resize(
                     *index_to_attack_bitboard.keys().max().unwrap() as usize + 1,
                     BitBoard::default(),
                 );
                 for (index, attack_bitboard) in index_to_attack_bitboard {
-                    mg.attack_bitboards[index as usize] = attack_bitboard;
+                    mb.attack_bitboards[index as usize] = attack_bitboard;
                 }
 
                 break;
             }
 
-            mgs[pos as usize] = mg;
+            mbs[pos as usize] = mb;
         }
 
-        mgs
+        mbs
     }
 }

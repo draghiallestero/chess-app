@@ -37,36 +37,8 @@ impl Board {
     fn generate_pawn_moves(&self, globals: &mut Globals, shared: &mut Shared) {
         // Bind shared data
         let Shared {
-            moves,
-            opponent_occupied_squares,
-            occupied_squares,
-        } = shared;
-
-        let mut try_add_pawn_move =
-            |globals: &mut Globals, pos, target_pos, mut new_board: Board| {
-                let (target_rank, _) = from_pos(target_pos);
-                // Promotion
-                if target_rank == 7 {
-                    new_board.player.remove_piece(Piece::Pawns, target_pos);
-                    // Queen promotion goes first as the "preferred" player choice
-                    new_board.player.add_piece(Piece::Queens, target_pos);
-                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
-                    new_board.player.remove_piece(Piece::Queens, target_pos);
-                    // Rook
-                    new_board.player.add_piece(Piece::Rooks, target_pos);
-                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
-                    new_board.player.remove_piece(Piece::Rooks, target_pos);
-                    // Knight
-                    new_board.player.add_piece(Piece::Knights, target_pos);
-                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
-                    new_board.player.remove_piece(Piece::Knights, target_pos);
-                    // Bishop
-                    new_board.player.add_piece(Piece::Bishops, target_pos);
-                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
-                } else {
-                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
-                }
-            };
+            occupied_squares, ..
+        } = *shared;
         for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
             let (rank, file) = from_pos(pos);
             if rank == 7 {
@@ -79,7 +51,7 @@ impl Board {
             if target_pos_free {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Pawns, pos, target_pos);
-                try_add_pawn_move(&mut *globals, pos, target_pos, new_board);
+                self.pawn_try_add_move(globals, shared, pos, target_pos, new_board);
                 // Double push
                 if rank == 1 {
                     let target_pos = to_pos(3, file);
@@ -88,27 +60,17 @@ impl Board {
                         let mut new_board = self.new_move_board();
                         new_board.player.move_piece(Piece::Pawns, pos, target_pos);
                         new_board.en_passant = globals.en_passant_list[pos as usize];
-                        try_add_pawn_move(&mut *globals, pos, target_pos, new_board);
+                        self.pawn_try_add_move(globals, shared, pos, target_pos, new_board);
                     }
                 }
             }
 
             // Attack
-            let mut try_attack = |globals: &mut Globals, attack_rank, attack_file| {
-                let attack_pos = to_pos(attack_rank, attack_file);
-                let attack_pos_occupied = opponent_occupied_squares.get(attack_pos);
-                if attack_pos_occupied {
-                    let mut new_board = self.new_move_board();
-                    new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
-                    Board::remove_attacked_piece(&mut new_board, attack_pos);
-                    try_add_pawn_move(&mut *globals, pos, attack_pos, new_board);
-                }
-            };
             if file > 0 {
-                try_attack(&mut *globals, rank + 1, file - 1);
+                self.pawn_try_attack(globals, shared, pos, rank + 1, file - 1);
             }
             if file < 7 {
-                try_attack(&mut *globals, rank + 1, file + 1);
+                self.pawn_try_attack(globals, shared, pos, rank + 1, file + 1);
             }
 
             // En passant
@@ -121,8 +83,67 @@ impl Board {
                     .player
                     .move_piece(Piece::Pawns, pos, self.en_passant.target_pos);
                 new_board.opponent.remove_any_piece(attack_pos);
-                try_add_pawn_move(&mut *globals, pos, attack_pos, new_board);
+                self.pawn_try_add_move(globals, shared, pos, attack_pos, new_board);
             }
+        }
+    }
+
+    fn pawn_try_add_move(
+        &self,
+        globals: &mut Globals,
+        shared: &mut Shared,
+        pos: u8,
+        target_pos: u8,
+        mut new_board: Board,
+    ) {
+        // Bind shared data
+        let Shared { moves, .. } = shared;
+
+        let (target_rank, _) = from_pos(target_pos);
+        // Promotion
+        if target_rank == 7 {
+            new_board.player.remove_piece(Piece::Pawns, target_pos);
+            // Queen promotion goes first as the "preferred" player choice
+            new_board.player.add_piece(Piece::Queens, target_pos);
+            Board::try_add_move(globals, moves, pos, target_pos, new_board);
+            new_board.player.remove_piece(Piece::Queens, target_pos);
+            // Rook
+            new_board.player.add_piece(Piece::Rooks, target_pos);
+            Board::try_add_move(globals, moves, pos, target_pos, new_board);
+            new_board.player.remove_piece(Piece::Rooks, target_pos);
+            // Knight
+            new_board.player.add_piece(Piece::Knights, target_pos);
+            Board::try_add_move(globals, moves, pos, target_pos, new_board);
+            new_board.player.remove_piece(Piece::Knights, target_pos);
+            // Bishop
+            new_board.player.add_piece(Piece::Bishops, target_pos);
+            Board::try_add_move(globals, moves, pos, target_pos, new_board);
+        } else {
+            Board::try_add_move(globals, moves, pos, target_pos, new_board);
+        }
+    }
+
+    fn pawn_try_attack(
+        &self,
+        globals: &mut Globals,
+        shared: &mut Shared,
+        pos: u8,
+        attack_rank: u8,
+        attack_file: u8,
+    ) {
+        // Bind shared data
+        let Shared {
+            opponent_occupied_squares,
+            ..
+        } = shared;
+
+        let attack_pos = to_pos(attack_rank, attack_file);
+        let attack_pos_occupied = opponent_occupied_squares.get(attack_pos);
+        if attack_pos_occupied {
+            let mut new_board = self.new_move_board();
+            new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
+            Board::remove_attacked_piece(&mut new_board, attack_pos);
+            self.pawn_try_add_move(globals, shared, pos, attack_pos, new_board);
         }
     }
 
@@ -166,33 +187,10 @@ impl Board {
             occupied_squares,
         } = shared;
 
-        let update_castling_status_when_rook_moves = |pos, new_board: &mut Board| {
-            if pos == 0 {
-                match new_board.player.castling_status {
-                    CastlingStatus::BothAvailable => {
-                        new_board.player.castling_status = CastlingStatus::KingSideAvailable
-                    }
-                    CastlingStatus::QueenSideAvailable => {
-                        new_board.player.castling_status = CastlingStatus::Unavailable
-                    }
-                    _ => (),
-                }
-            } else if pos == 7 {
-                match new_board.player.castling_status {
-                    CastlingStatus::BothAvailable => {
-                        new_board.player.castling_status = CastlingStatus::QueenSideAvailable
-                    }
-                    CastlingStatus::KingSideAvailable => {
-                        new_board.player.castling_status = CastlingStatus::Unavailable
-                    }
-                    _ => (),
-                }
-            }
-        };
         for pos in BitIter::from(self.player.rooks.board).map(|x| x as u8) {
             let attack_bitboard = {
-                let mg = &globals.rook_magic_bitboards[pos as usize];
-                mg.get_attack_bitboard(*occupied_squares)
+                let mb = &globals.rook_magic_bitboards[pos as usize];
+                mb.get_attack_bitboard(*occupied_squares)
             };
 
             // Move
@@ -201,8 +199,8 @@ impl Board {
             {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Rooks, pos, target_pos);
-                update_castling_status_when_rook_moves(pos, &mut new_board);
-                Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
+                self.rook_update_castling_status_after_move(pos, &mut new_board);
+                Board::try_add_move(globals, moves, pos, target_pos, new_board);
             }
 
             // Attack
@@ -212,8 +210,32 @@ impl Board {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Rooks, pos, attack_pos);
                 Board::remove_attacked_piece(&mut new_board, attack_pos);
-                update_castling_status_when_rook_moves(pos, &mut new_board);
-                Board::try_add_move(&mut *globals, moves, pos, attack_pos, new_board);
+                self.rook_update_castling_status_after_move(pos, &mut new_board);
+                Board::try_add_move(globals, moves, pos, attack_pos, new_board);
+            }
+        }
+    }
+
+    fn rook_update_castling_status_after_move(&self, pos: u8, new_board: &mut Board) {
+        if pos == 0 {
+            match new_board.player.castling_status {
+                CastlingStatus::BothAvailable => {
+                    new_board.player.castling_status = CastlingStatus::KingSideAvailable
+                }
+                CastlingStatus::QueenSideAvailable => {
+                    new_board.player.castling_status = CastlingStatus::Unavailable
+                }
+                _ => (),
+            }
+        } else if pos == 7 {
+            match new_board.player.castling_status {
+                CastlingStatus::BothAvailable => {
+                    new_board.player.castling_status = CastlingStatus::QueenSideAvailable
+                }
+                CastlingStatus::KingSideAvailable => {
+                    new_board.player.castling_status = CastlingStatus::Unavailable
+                }
+                _ => (),
             }
         }
     }
@@ -227,8 +249,8 @@ impl Board {
         } = shared;
 
         for pos in BitIter::from(self.player.bishops.board).map(|x| x as u8) {
-            let mg = &globals.bishop_magic_bitboards[pos as usize];
-            let attack_bitboard = mg.get_attack_bitboard(*occupied_squares);
+            let mb = &globals.bishop_magic_bitboards[pos as usize];
+            let attack_bitboard = mb.get_attack_bitboard(*occupied_squares);
 
             // Move
             for target_pos in
