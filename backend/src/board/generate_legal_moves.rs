@@ -2,77 +2,71 @@ use std::cell::RefCell;
 
 use bit_iter::BitIter;
 
-use super::Board;
-
-use crate::{
-    _move::Move,
-    BitBoard, CastlingStatus,
-    move_sets::{
-        BISHOP_MAGIC_BITBOARDS, EN_PASSANT_LISTS, KING_BITBOARDS, KNIGHT_BITBOARDS,
-        ROOK_MAGIC_BITBOARDS, from_pos, to_pos,
-    },
-    piece::Piece,
-};
+use crate::*;
 
 struct Shared {
+    pub moves: Box<Moves>,
     pub opponent_occupied_squares: BitBoard,
     pub occupied_squares: BitBoard,
 }
 
 impl Board {
-    fn shared(&self) -> Shared {
+    fn shared(&self, globals: &mut Globals) -> Shared {
         let player_occupied_squares = self.player.occupied_squares();
         let opponent_occupied_squares = self.opponent.occupied_squares();
         Shared {
+            moves: globals.moves_vec.pop_moves(),
             opponent_occupied_squares: opponent_occupied_squares,
             occupied_squares: player_occupied_squares | opponent_occupied_squares,
         }
     }
 
-    pub fn generate_legal_moves(&self, moves: &mut Vec<Move>) {
-        moves.clear();
+    pub fn generate_legal_moves(&self, globals: &mut Globals) -> Box<Moves> {
+        let mut shared = self.shared(globals);
 
-        let shared = self.shared();
+        self.generate_pawn_moves(globals, &mut shared);
+        self.generate_knight_moves(globals, &mut shared);
+        self.generate_rook_moves(globals, &mut shared);
+        self.generate_bishop_moves(globals, &mut shared);
+        self.generate_queen_moves(globals, &mut shared);
+        self.generate_king_moves(globals, &mut shared);
 
-        self.generate_pawn_moves(moves, &shared);
-        self.generate_knight_moves(moves, &shared);
-        self.generate_rook_moves(moves, &shared);
-        self.generate_bishop_moves(moves, &shared);
-        self.generate_queen_moves(moves, &shared);
-        self.generate_king_moves(moves, &shared);
+        shared.moves
     }
 
-    fn generate_pawn_moves(&self, moves: &mut Vec<Move>, shared: &Shared) {
+    fn generate_pawn_moves(&self, globals: &mut Globals, shared: &mut Shared) {
         // Bind shared data
         let Shared {
+            moves,
             opponent_occupied_squares,
             occupied_squares,
-        } = &shared;
+        } = shared;
 
-        let mut try_add_pawn_move = |pos, target_pos, mut new_board: Board| {
-            let (target_rank, _) = from_pos(target_pos);
-            // Promotion
-            if target_rank == 7 {
-                new_board.player.remove_piece(Piece::Pawns, target_pos);
-                // Queen promotion goes first as the "preferred" player choice
-                new_board.player.add_piece(Piece::Queens, target_pos);
-                Board::try_add_move(moves, pos, target_pos, new_board);
-                new_board.player.remove_piece(Piece::Queens, target_pos);
-                // Rook
-                new_board.player.add_piece(Piece::Rooks, target_pos);
-                Board::try_add_move(moves, pos, target_pos, new_board);
-                new_board.player.remove_piece(Piece::Rooks, target_pos);
-                // Knight
-                new_board.player.add_piece(Piece::Knights, target_pos);
-                Board::try_add_move(moves, pos, target_pos, new_board);
-                new_board.player.remove_piece(Piece::Knights, target_pos);
-                // Bishop
-                new_board.player.add_piece(Piece::Bishops, target_pos);
-                Board::try_add_move(moves, pos, target_pos, new_board);
-            } else {
-                Board::try_add_move(moves, pos, target_pos, new_board);
-            }
-        };
+        let mut try_add_pawn_move =
+            |globals: &mut Globals, pos, target_pos, mut new_board: Board| {
+                let (target_rank, _) = from_pos(target_pos);
+                // Promotion
+                if target_rank == 7 {
+                    new_board.player.remove_piece(Piece::Pawns, target_pos);
+                    // Queen promotion goes first as the "preferred" player choice
+                    new_board.player.add_piece(Piece::Queens, target_pos);
+                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
+                    new_board.player.remove_piece(Piece::Queens, target_pos);
+                    // Rook
+                    new_board.player.add_piece(Piece::Rooks, target_pos);
+                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
+                    new_board.player.remove_piece(Piece::Rooks, target_pos);
+                    // Knight
+                    new_board.player.add_piece(Piece::Knights, target_pos);
+                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
+                    new_board.player.remove_piece(Piece::Knights, target_pos);
+                    // Bishop
+                    new_board.player.add_piece(Piece::Bishops, target_pos);
+                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
+                } else {
+                    Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
+                }
+            };
         for pos in BitIter::from(self.player.pawns.board).map(|x| x as u8) {
             let (rank, file) = from_pos(pos);
             if rank == 7 {
@@ -85,7 +79,7 @@ impl Board {
             if target_pos_free {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Pawns, pos, target_pos);
-                try_add_pawn_move(pos, target_pos, new_board);
+                try_add_pawn_move(&mut *globals, pos, target_pos, new_board);
                 // Double push
                 if rank == 1 {
                     let target_pos = to_pos(3, file);
@@ -93,28 +87,28 @@ impl Board {
                     if target_pos_free {
                         let mut new_board = self.new_move_board();
                         new_board.player.move_piece(Piece::Pawns, pos, target_pos);
-                        new_board.en_passant = EN_PASSANT_LISTS[pos as usize];
-                        try_add_pawn_move(pos, target_pos, new_board);
+                        new_board.en_passant = globals.en_passant_list[pos as usize];
+                        try_add_pawn_move(&mut *globals, pos, target_pos, new_board);
                     }
                 }
             }
 
             // Attack
-            let mut try_attack = |attack_rank, attack_file| {
+            let mut try_attack = |globals: &mut Globals, attack_rank, attack_file| {
                 let attack_pos = to_pos(attack_rank, attack_file);
                 let attack_pos_occupied = opponent_occupied_squares.get(attack_pos);
                 if attack_pos_occupied {
                     let mut new_board = self.new_move_board();
                     new_board.player.move_piece(Piece::Pawns, pos, attack_pos);
                     Board::remove_attacked_piece(&mut new_board, attack_pos);
-                    try_add_pawn_move(pos, attack_pos, new_board);
+                    try_add_pawn_move(&mut *globals, pos, attack_pos, new_board);
                 }
             };
             if file > 0 {
-                try_attack(rank + 1, file - 1);
+                try_attack(&mut *globals, rank + 1, file - 1);
             }
             if file < 7 {
-                try_attack(rank + 1, file + 1);
+                try_attack(&mut *globals, rank + 1, file + 1);
             }
 
             // En passant
@@ -127,20 +121,21 @@ impl Board {
                     .player
                     .move_piece(Piece::Pawns, pos, self.en_passant.target_pos);
                 new_board.opponent.remove_any_piece(attack_pos);
-                try_add_pawn_move(pos, attack_pos, new_board);
+                try_add_pawn_move(&mut *globals, pos, attack_pos, new_board);
             }
         }
     }
 
-    fn generate_knight_moves(&self, moves: &mut Vec<Move>, shared: &Shared) {
+    fn generate_knight_moves(&self, globals: &mut Globals, shared: &mut Shared) {
         // Bind shared data
         let Shared {
+            moves,
             opponent_occupied_squares,
             occupied_squares,
-        } = &shared;
+        } = shared;
 
         for pos in BitIter::from(self.player.knights.board).map(|x| x as u8) {
-            let attack_bitboard = KNIGHT_BITBOARDS[pos as usize];
+            let attack_bitboard = globals.knight_bitboards[pos as usize];
 
             // Move
             for target_pos in
@@ -148,7 +143,7 @@ impl Board {
             {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Knights, pos, target_pos);
-                Board::try_add_move(moves, pos, target_pos, new_board);
+                Board::try_add_move(globals, moves, pos, target_pos, new_board);
             }
 
             // Attack
@@ -158,17 +153,18 @@ impl Board {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Knights, pos, attack_pos);
                 Board::remove_attacked_piece(&mut new_board, attack_pos);
-                Board::try_add_move(moves, pos, attack_pos, new_board);
+                Board::try_add_move(globals, moves, pos, attack_pos, new_board);
             }
         }
     }
 
-    fn generate_rook_moves(&self, moves: &mut Vec<Move>, shared: &Shared) {
+    fn generate_rook_moves(&self, globals: &mut Globals, shared: &mut Shared) {
         // Bind shared data
         let Shared {
+            moves,
             opponent_occupied_squares,
             occupied_squares,
-        } = &shared;
+        } = shared;
 
         let update_castling_status_when_rook_moves = |pos, new_board: &mut Board| {
             if pos == 0 {
@@ -194,8 +190,10 @@ impl Board {
             }
         };
         for pos in BitIter::from(self.player.rooks.board).map(|x| x as u8) {
-            let mg = &ROOK_MAGIC_BITBOARDS[pos as usize];
-            let attack_bitboard = mg.get_attack_bitboard(*occupied_squares);
+            let attack_bitboard = {
+                let mg = &globals.rook_magic_bitboards[pos as usize];
+                mg.get_attack_bitboard(*occupied_squares)
+            };
 
             // Move
             for target_pos in
@@ -204,7 +202,7 @@ impl Board {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Rooks, pos, target_pos);
                 update_castling_status_when_rook_moves(pos, &mut new_board);
-                Board::try_add_move(moves, pos, target_pos, new_board);
+                Board::try_add_move(&mut *globals, moves, pos, target_pos, new_board);
             }
 
             // Attack
@@ -215,20 +213,21 @@ impl Board {
                 new_board.player.move_piece(Piece::Rooks, pos, attack_pos);
                 Board::remove_attacked_piece(&mut new_board, attack_pos);
                 update_castling_status_when_rook_moves(pos, &mut new_board);
-                Board::try_add_move(moves, pos, attack_pos, new_board);
+                Board::try_add_move(&mut *globals, moves, pos, attack_pos, new_board);
             }
         }
     }
 
-    fn generate_bishop_moves(&self, moves: &mut Vec<Move>, shared: &Shared) {
+    fn generate_bishop_moves(&self, globals: &mut Globals, shared: &mut Shared) {
         // Bind shared data
         let Shared {
+            moves,
             opponent_occupied_squares,
             occupied_squares,
-        } = &shared;
+        } = shared;
 
         for pos in BitIter::from(self.player.bishops.board).map(|x| x as u8) {
-            let mg = &BISHOP_MAGIC_BITBOARDS[pos as usize];
+            let mg = &globals.bishop_magic_bitboards[pos as usize];
             let attack_bitboard = mg.get_attack_bitboard(*occupied_squares);
 
             // Move
@@ -237,7 +236,7 @@ impl Board {
             {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Bishops, pos, target_pos);
-                Board::try_add_move(moves, pos, target_pos, new_board);
+                Board::try_add_move(globals, moves, pos, target_pos, new_board);
             }
 
             // Attack
@@ -247,24 +246,25 @@ impl Board {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Bishops, pos, attack_pos);
                 Board::remove_attacked_piece(&mut new_board, attack_pos);
-                Board::try_add_move(moves, pos, attack_pos, new_board);
+                Board::try_add_move(globals, moves, pos, attack_pos, new_board);
             }
         }
     }
 
-    fn generate_queen_moves(&self, moves: &mut Vec<Move>, shared: &Shared) {
+    fn generate_queen_moves(&self, globals: &mut Globals, shared: &mut Shared) {
         // Bind shared data
         let Shared {
+            moves,
             opponent_occupied_squares,
             occupied_squares,
-        } = &shared;
+        } = shared;
 
         for pos in BitIter::from(self.player.queens.board).map(|x| x as u8) {
-            let mg_cardinals = &ROOK_MAGIC_BITBOARDS[pos as usize];
+            let mg_cardinals = &globals.rook_magic_bitboards[pos as usize];
             let attack_bitboard_cardinals = mg_cardinals.get_attack_bitboard(*occupied_squares);
-            let mg_diagonals = &BISHOP_MAGIC_BITBOARDS[pos as usize];
+            let mg_diagonals = &globals.bishop_magic_bitboards[pos as usize];
             let attack_bitboard_diagonals = mg_diagonals.get_attack_bitboard(*occupied_squares);
-            let attack_bitboard = *attack_bitboard_cardinals | *attack_bitboard_diagonals;
+            let attack_bitboard = attack_bitboard_cardinals | attack_bitboard_diagonals;
 
             // Move
             for target_pos in
@@ -272,7 +272,7 @@ impl Board {
             {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Queens, pos, target_pos);
-                Board::try_add_move(moves, pos, target_pos, new_board);
+                Board::try_add_move(globals, moves, pos, target_pos, new_board);
             }
 
             // Attack
@@ -282,21 +282,22 @@ impl Board {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Queens, pos, attack_pos);
                 Board::remove_attacked_piece(&mut new_board, attack_pos);
-                Board::try_add_move(moves, pos, attack_pos, new_board);
+                Board::try_add_move(globals, moves, pos, attack_pos, new_board);
             }
         }
     }
 
-    fn generate_king_moves(&self, moves: &mut Vec<Move>, shared: &Shared) {
+    fn generate_king_moves(&self, globals: &mut Globals, shared: &mut Shared) {
         // Bind shared data
         let Shared {
+            moves,
             opponent_occupied_squares,
             occupied_squares,
-        } = &shared;
+        } = shared;
 
         // Kings
         for pos in BitIter::from(self.player.kings.board).map(|x| x as u8) {
-            let attack_bitboard = KING_BITBOARDS[pos as usize];
+            let attack_bitboard = globals.king_bitboards[pos as usize];
             for target_pos in
                 BitIter::from(attack_bitboard.board & !occupied_squares.board).map(|x| x as u8)
             {
@@ -304,7 +305,7 @@ impl Board {
                 let mut new_board = self.new_move_board();
                 new_board.player.move_piece(Piece::Kings, pos, target_pos);
                 new_board.player.castling_status = CastlingStatus::Unavailable;
-                Board::try_add_move(moves, pos, target_pos, new_board);
+                Board::try_add_move(globals, moves, pos, target_pos, new_board);
             }
             for attack_pos in BitIter::from(attack_bitboard.board & opponent_occupied_squares.board)
                 .map(|x| x as u8)
@@ -314,7 +315,7 @@ impl Board {
                 new_board.player.move_piece(Piece::Kings, pos, attack_pos);
                 Board::remove_attacked_piece(&mut new_board, attack_pos);
                 new_board.player.castling_status = CastlingStatus::Unavailable;
-                Board::try_add_move(moves, pos, attack_pos, new_board);
+                Board::try_add_move(globals, moves, pos, attack_pos, new_board);
             }
 
             // Castling
@@ -328,11 +329,11 @@ impl Board {
                     current_pos = (current_pos as i8 + pos_adder) as u8;
                 }
                 let mut new_board = self.new_move_board();
-                if !self.is_king_in_check() {
+                if !self.is_king_in_check(globals) {
                     let neighbor_pos = (pos as i8 + pos_adder) as u8;
                     let target_pos = (pos as i8 + 2 * pos_adder) as u8;
                     new_board.player.move_piece(Piece::Kings, pos, neighbor_pos);
-                    if !new_board.is_king_in_check() {
+                    if !new_board.is_king_in_check(globals) {
                         new_board
                             .player
                             .move_piece(Piece::Kings, neighbor_pos, target_pos);
@@ -340,7 +341,7 @@ impl Board {
                             .player
                             .move_piece(Piece::Rooks, rook_pos, neighbor_pos);
                         new_board.player.castling_status = CastlingStatus::Unavailable;
-                        Board::try_add_move(moves, pos, target_pos, new_board);
+                        Board::try_add_move(globals, moves, pos, target_pos, new_board);
                     }
                 }
             });
@@ -367,14 +368,21 @@ impl Board {
     }
 
     // Check whether a move is valid before adding it
-    fn try_add_move(moves: &mut Vec<Move>, pos: u8, target_pos: u8, new_board: Board) {
-        if !new_board.is_king_in_check() {
-            moves.push(Move {
+    fn try_add_move(
+        globals: &mut Globals,
+        moves: &mut Box<Moves>,
+        pos: u8,
+        target_pos: u8,
+        new_board: Board,
+    ) {
+        if !new_board.is_king_in_check(globals) {
+            moves.list[moves.count as usize] = Move {
                 from: pos,
                 to: target_pos,
                 board: new_board.flip_view(),
                 evaluation: 0,
-            })
+            };
+            moves.count += 1;
         }
     }
     // Remove attacked piece

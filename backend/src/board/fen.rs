@@ -1,9 +1,4 @@
-use super::Board;
-
-use crate::{
-    CastlingStatus,
-    move_sets::{EN_PASSANT_LISTS, from_chars, to_chars, to_pos},
-};
+use crate::*;
 
 impl Board {
     pub fn to_fen(&self) -> String {
@@ -147,7 +142,7 @@ impl Board {
         fen
     }
 
-    pub fn from_fen(fen: &str) -> Board {
+    pub fn from_fen(globals: &Globals, fen: &str) -> Board {
         let mut board = Board::blank();
 
         let mut fen_ix = 0;
@@ -280,10 +275,10 @@ impl Board {
             let target_pos = from_chars(chars);
             if side_to_move == 'w' {
                 let pos = target_pos + 8;
-                board.en_passant = EN_PASSANT_LISTS[63 - pos as usize];
+                board.en_passant = globals.en_passant_list[63 - pos as usize];
             } else {
                 let pos = target_pos - 8;
-                board.en_passant = EN_PASSANT_LISTS[pos as usize].flip_view();
+                board.en_passant = globals.en_passant_list[pos as usize].flip_view();
             }
             fen_ix += 1;
         }

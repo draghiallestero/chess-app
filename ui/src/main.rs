@@ -1,7 +1,5 @@
-use backend::BitBoard;
-use backend::Board;
-use backend::Move;
-use backend::move_sets::to_chars;
+use backend::*;
+
 use iced::Background;
 use iced::Border;
 use iced::Point;
@@ -16,25 +14,24 @@ use iced::widget::mouse_area;
 use iced::widget::{center, container, grid, stack, text};
 
 struct BoardWidget {
+    globals: Globals,
     board: Board,
+    legal_moves: Box<Moves>,
     held_piece_pos: Option<u8>,
     mouse_pos: Point,
-    legal_moves: Vec<Move>,
 }
 
 impl Default for BoardWidget {
     fn default() -> Self {
+        let mut globals = Globals::default();
         let board = Board::default();
-        let legal_moves = {
-            let mut moves = Vec::default();
-            board.generate_legal_moves(&mut moves);
-            moves
-        };
+        let legal_moves = board.generate_legal_moves(&mut globals);
         BoardWidget {
+            globals: globals,
             board: board,
+            legal_moves: legal_moves,
             held_piece_pos: None,
             mouse_pos: Point::default(),
-            legal_moves: legal_moves,
         }
     }
 }
@@ -90,12 +87,12 @@ impl BoardWidget {
 
         // Which squares the held piece can be moved to
         let legal_move_targets = match self.held_piece_pos {
-            Some(from) => self
-                .legal_moves
-                .iter()
-                .filter(|_move| _move.from == from)
-                .map(|_move| _move.to as u8)
-                .collect(),
+            Some(from) => Vec::from_iter(
+                self.legal_moves
+                    .iter()
+                    .filter(|_move| _move.from == from)
+                    .map(|_move| _move.to as u8),
+            ),
             None => Vec::default(),
         };
 
@@ -273,14 +270,14 @@ impl BoardWidget {
                 {
                     Some(_move) => {
                         self.board = _move.board;
-                        self.board.generate_legal_moves(&mut self.legal_moves);
+                        self.legal_moves = self.board.generate_legal_moves(&mut self.globals);
 
                         // // Pretend the other player didn't make a move
                         // self.board = _move.board.flip_view();
                         // self.board.halfmove_count += 1;
                         // self.board.generate_legal_moves(&mut self.legal_moves);
 
-                        match self.board.search_for_best_move(1) {
+                        match self.board.search_for_best_move(&mut self.globals, 1) {
                             Some(_move) => {
                                 println!(
                                     "{} best move: {} to {}",
@@ -296,24 +293,7 @@ impl BoardWidget {
                             None => (),
                         }
                     }
-                    None => (), // match self.board.search_for_best_move(3) {
-                                // Some(_move) => {
-                                //     println!(
-                                //         "{} best move: {} to {}",
-                                //         if self.board.halfmove_count % 2 == 0 {
-                                //             "White"
-                                //         } else {
-                                //             "Black"
-                                //         },
-                                //         to_chars(_move.from),
-                                //         to_chars(_move.to)
-                                //     );
-
-                                //     self.board = _move.board;
-                                //     self.board.generate_legal_moves(&mut self.legal_moves);
-                                // }
-                                // None => (),
-                                // },
+                    None => (),
                 };
                 self.held_piece_pos = None;
             }

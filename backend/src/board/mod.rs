@@ -2,7 +2,7 @@ mod attacking_positions;
 mod fen;
 mod generate_legal_moves;
 
-use super::*;
+use crate::*;
 
 use bit_iter::BitIter;
 
@@ -95,10 +95,10 @@ impl Board {
         }
     }
 
-    fn is_king_in_check(&self) -> bool {
+    fn is_king_in_check(&self, globals: &Globals) -> bool {
         let pos = BitIter::from(self.player.kings.board).next().unwrap() as u8;
 
-        return self.is_position_attacked(pos);
+        return self.is_position_attacked(globals, pos);
     }
 
     pub fn evaluate_position(&self) -> i16 {
@@ -107,59 +107,62 @@ impl Board {
         player_score - oppponent_score
     }
 
-    pub fn search_for_best_move(&self, max_depth: usize) -> Option<Move> {
-        let moves = {
-            let mut moves = Vec::default();
-            self.generate_legal_moves(&mut moves);
-            moves
-        };
+    pub fn search_for_best_move(&self, globals: &mut Globals, max_depth: usize) -> Option<Move> {
+        let moves = self.generate_legal_moves(globals);
         if moves.is_empty() {
+            globals.moves_vec.push_moves(moves);
             return None;
         }
-        let mut best_move = Some(moves[0]);
+        let mut best_move = Some(moves.list[0]);
 
-        let mut next_depth_moves_vec = vec![Vec::default(); max_depth - 1];
         let mut alpha = i16::MIN + 1;
         let beta = i16::MAX - 1;
-        for _move in moves {
-            let alpha_candidate = -_move.board.search_for_best_move_impl(
-                next_depth_moves_vec.as_mut_slice(),
-                -beta,
-                -alpha,
-            );
+        for _move in moves.iter() {
+            let alpha_candidate = -_move
+                .board
+                .search_for_best_move_impl(globals, 1, max_depth, -beta, -alpha);
             if alpha_candidate > alpha {
                 alpha = alpha_candidate;
-                best_move = Some(_move);
+                best_move = Some(*_move);
             }
         }
+
+        globals.moves_vec.push_moves(moves);
+
         best_move
     }
 
     pub fn search_for_best_move_impl(
         &self,
-        moves_slice: &mut [Vec<Move>],
+        globals: &mut Globals,
+        depth: usize,
+        max_depth: usize,
         alpha: i16,
         beta: i16,
     ) -> i16 {
-        if moves_slice.is_empty() {
+        if depth == max_depth {
             return self.evaluate_position();
         }
 
-        let (mut moves, mut moves_slice_split) = moves_slice.split_first_mut().unwrap();
-        self.generate_legal_moves(&mut moves);
-
+        let moves = self.generate_legal_moves(globals);
         if moves.is_empty() {
+            globals.moves_vec.push_moves(moves);
             return self.evaluate_position();
         }
 
         let mut alpha = alpha;
-        for _move in moves {
-            let alpha_candidate =
-                -_move
-                    .board
-                    .search_for_best_move_impl(&mut moves_slice_split, -beta, -alpha);
+        for _move in moves.iter() {
+            let alpha_candidate = -_move.board.search_for_best_move_impl(
+                globals,
+                depth + 1,
+                max_depth,
+                -beta,
+                -alpha,
+            );
             alpha = max(alpha, alpha_candidate);
         }
+
+        globals.moves_vec.push_moves(moves);
 
         alpha
     }
