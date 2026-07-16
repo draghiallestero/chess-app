@@ -1,8 +1,9 @@
 use bit_iter::BitIter;
 
-use crate::{
-    Board,
-    move_sets::{BISHOP_MAGIC_BITBOARDS, KNIGHT_BITBOARDS, ROOK_MAGIC_BITBOARDS, from_pos, to_pos},
+use super::Board;
+
+use crate::move_sets::{
+    BISHOP_MAGIC_BITBOARDS, KNIGHT_BITBOARDS, ROOK_MAGIC_BITBOARDS, from_pos, to_pos,
 };
 
 impl Board {

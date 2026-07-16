@@ -1,5 +1,7 @@
+use super::Board;
+
 use crate::{
-    Board, CastlingStatus,
+    CastlingStatus,
     move_sets::{EN_PASSANT_LISTS, from_chars, to_chars, to_pos},
 };
 

@@ -2,8 +2,11 @@ use std::cell::RefCell;
 
 use bit_iter::BitIter;
 
+use super::Board;
+
 use crate::{
-    BitBoard, Board, CastlingStatus, Move,
+    _move::Move,
+    BitBoard, CastlingStatus,
     move_sets::{
         BISHOP_MAGIC_BITBOARDS, EN_PASSANT_LISTS, KING_BITBOARDS, KNIGHT_BITBOARDS,
         ROOK_MAGIC_BITBOARDS, from_pos, to_pos,
